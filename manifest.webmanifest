@@ -1,0 +1,35 @@
+{
+  "name": "Badminton Swipe Challenge",
+  "short_name": "Badminton",
+  "description": "スワイプで打ち分けるスマホ向けバドミントン。ドロップ・クリア・ドライブ・スマッシュを使い分けてラリーを繋げよう。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0b1f33",
+  "theme_color": "#0b1f33",
+  "categories": ["games", "sports"],
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

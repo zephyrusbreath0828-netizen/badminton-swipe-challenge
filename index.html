@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Badminton Swipe Challenge</title>
+<meta name="description" content="スワイプで打ち分ける、スマホ向け本格バドミントン。ドロップ・クリア・ドライブ・スマッシュを使い分けてラリーを繋げよう。" />
+<meta name="theme-color" content="#0b1f33" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Badminton" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="assets/icon-192.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/screens.css" />
+<link rel="stylesheet" href="css/hud.css" />
+</head>
+<body>
+<div id="app">
+  <canvas id="stage" aria-label="バドミントンコート"></canvas>
+
+  <div id="ui">
+
+    <!-- ============ ホーム ============ -->
+    <section class="screen screen--home" data-screen="home" id="screen-home">
+      <div class="home__top">
+        <p class="kicker">SPORTS ARCADE — v1.0.0</p>
+        <h1 class="hero">
+          <span class="hero__small">Badminton</span>
+          <span class="hero__big">Swipe</span>
+          <span class="hero__big hero__big--accent">Challenge</span>
+        </h1>
+        <p class="hero__tag">スワイプで打ち分ける、新感覚バドミントン</p>
+      </div>
+
+      <div class="home__bottom">
+        <div class="home-card">
+          <button class="btn btn--primary" id="btn-start">
+            <span class="btn__main">スタート</span>
+            <span class="btn__sub">TAP TO PLAY</span>
+          </button>
+
+          <div class="home-card__row">
+            <button class="btn btn--ghost" id="btn-settings">
+              <span class="btn__icon">⚙</span>設定
+            </button>
+            <button class="btn btn--ghost" id="btn-ranking">
+              <span class="btn__icon">🏆</span>ランキング
+            </button>
+          </div>
+
+          <button class="pill" id="btn-hand-quick">
+            <span class="pill__label">利き手</span>
+            <span class="pill__value" data-hand-label>右利き</span>
+            <span class="pill__hint">タップで切替</span>
+          </button>
+        </div>
+        <p class="footnote">画面をスワイプしてラケットを振る／移動は自動</p>
+      </div>
+    </section>
+
+    <!-- ============ 設定 ============ -->
+    <section class="screen screen--panel" data-screen="settings" id="screen-settings">
+      <div class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">設定</h2>
+          <p class="panel__sub">SETTINGS</p>
+        </header>
+
+        <div class="field">
+          <span class="field__label">AI 難易度</span>
+          <div class="seg" role="group" aria-label="AI難易度">
+            <button class="seg__btn" data-diff="easy">初級</button>
+            <button class="seg__btn" data-diff="normal">中級</button>
+            <button class="seg__btn" data-diff="hard">上級</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field__label">利き手</span>
+          <div class="seg" role="group" aria-label="利き手">
+            <button class="seg__btn" data-hand="right">右利き</button>
+            <button class="seg__btn" data-hand="left">左利き</button>
+          </div>
+          <p class="field__note">左利きはフォア/バックが反転し、同じスワイプでもコースが変わります。</p>
+        </div>
+
+        <div class="field field--row">
+          <span class="field__label">サウンド</span>
+          <button class="toggle" id="set-sound">ON</button>
+        </div>
+
+        <div class="field field--row">
+          <span class="field__label">ランキング</span>
+          <button class="toggle toggle--danger" id="btn-clear-ranking">削除</button>
+        </div>
+
+        <button class="btn btn--ghost btn--wide" id="btn-settings-back">ホームに戻る</button>
+      </div>
+    </section>
+
+    <!-- ============ ランキング ============ -->
+    <section class="screen screen--panel" data-screen="ranking" id="screen-ranking">
+      <div class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">ランキング</h2>
+          <p class="panel__sub">LOCAL TOP 10</p>
+        </header>
+        <div class="ranking" id="ranking-list"></div>
+        <button class="btn btn--ghost btn--wide" id="btn-ranking-back">ホームに戻る</button>
+      </div>
+    </section>
+
+    <!-- ============ リザルト ============ -->
+    <section class="screen screen--panel" data-screen="result" id="screen-result">
+      <div class="panel panel--result">
+        <p class="kicker kicker--center">RESULT</p>
+        <div class="result-score">
+          <span id="res-score">0</span><small>pt</small>
+        </div>
+        <p class="result-badge" id="res-badge" data-tone="plain">NEW RECORD!</p>
+
+        <div class="result-grid">
+          <div class="result-item">
+            <span class="result-item__label">最大ラリー</span>
+            <span class="result-item__value" id="res-rally">0</span>
+          </div>
+          <div class="result-item">
+            <span class="result-item__label">スマッシュ</span>
+            <span class="result-item__value" id="res-smash">0</span>
+          </div>
+          <div class="result-item">
+            <span class="result-item__label">到達レベル</span>
+            <span class="result-item__value" id="res-level">1</span>
+          </div>
+        </div>
+
+        <p class="result-comment" id="res-comment"></p>
+
+        <div class="result-actions">
+          <button class="btn btn--primary" id="btn-retry">
+            <span class="btn__main">もう一度</span>
+            <span class="btn__sub">RETRY</span>
+          </button>
+          <button class="btn btn--ghost btn--wide" id="btn-home">ホームに戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HUD ============ -->
+    <div class="hud" id="hud">
+      <div class="hud__top">
+        <div class="stat stat--score">
+          <span class="stat__label">SCORE</span>
+          <span class="stat__value" id="hud-score">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">RALLY</span>
+          <span class="stat__value stat__value--sm" id="hud-rally">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">LEVEL</span>
+          <span class="stat__value stat__value--sm" id="hud-level">1</span>
+        </div>
+        <button class="icon-btn" id="btn-pause" aria-label="一時停止">
+          <span></span><span></span>
+        </button>
+      </div>
+
+      <div class="level-bar" id="level-bar">
+        <div class="level-bar__fill" id="level-fill"></div>
+      </div>
+
+      <div class="toasts" id="toasts"></div>
+
+      <div class="callout" id="callout" data-tone="normal">
+        <span class="callout__title" id="callout-title"></span>
+        <span class="callout__sub" id="callout-sub"></span>
+      </div>
+
+      <div class="level-banner" id="level-banner">
+        <span class="level-banner__num">LEVEL 2</span>
+        <span class="level-banner__label">スピードアップ！</span>
+      </div>
+
+      <div class="hud__bottom">
+        <div class="shot-ribbon" id="shot-ribbon" data-owner="player">ドロップ</div>
+        <div class="serve-prompt" id="serve-prompt">
+          <span class="serve-prompt__arrow">↑</span>
+          <span>上にスワイプしてサーブ</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ポーズ ============ -->
+    <div class="overlay" id="overlay-pause">
+      <div class="overlay__card">
+        <p class="kicker kicker--center">PAUSE</p>
+        <h2 class="overlay__title">一時停止中</h2>
+        <button class="btn btn--primary btn--wide" id="btn-resume">
+          <span class="btn__main">再開</span>
+        </button>
+        <button class="btn btn--ghost btn--wide" id="btn-pause-sound">
+          <span id="pause-sound-label">サウンド ON</span>
+        </button>
+        <button class="btn btn--ghost btn--wide" id="btn-quit">リタイア（結果を見る）</button>
+      </div>
+    </div>
+
+    <!-- ============ チュートリアル ============ -->
+    <div class="overlay overlay--tutorial" id="tutorial">
+      <div class="overlay__card overlay__card--wide">
+        <p class="kicker kicker--center">HOW TO PLAY</p>
+        <h2 class="overlay__title">スワイプで打ち分けよう</h2>
+        <ul class="tut-list">
+          <li class="tut-item" data-type="drop">
+            <span class="tut-item__gesture">↑<small>短</small></span>
+            <span class="tut-item__name">ドロップ</span>
+            <span class="tut-item__desc">ネット際へ落とす</span>
+          </li>
+          <li class="tut-item" data-type="clear">
+            <span class="tut-item__gesture">↑<small>長</small></span>
+            <span class="tut-item__name">クリア</span>
+            <span class="tut-item__desc">高く奥まで飛ばす</span>
+          </li>
+          <li class="tut-item" data-type="drive">
+            <span class="tut-item__gesture">→</span>
+            <span class="tut-item__name">ドライブ</span>
+            <span class="tut-item__desc">低く速い球</span>
+          </li>
+          <li class="tut-item" data-type="smash">
+            <span class="tut-item__gesture">↓</span>
+            <span class="tut-item__name">スマッシュ</span>
+            <span class="tut-item__desc">高い打点で強烈に</span>
+          </li>
+        </ul>
+        <p class="tut-note">移動は自動。シャトルが届く位置でスワイプしよう。<br />下スワイプは<b>打点が高いとき</b>だけスマッシュになる。</p>
+        <button class="btn btn--primary btn--wide" id="tut-close">
+          <span class="btn__main">はじめる</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

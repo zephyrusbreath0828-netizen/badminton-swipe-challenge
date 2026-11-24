@@ -185,56 +185,54 @@ export function initPWA() {
   function syncUI() {
     const snap = installer.snapshot();
     const platform = snap.platform;
+    const deferred = getDeferredPrompt();
 
     if (rowBtn && rowLabel) {
-      const state = !snap.installed && snap.canPrompt ? 'available'
+      // 権威は window.deferredPrompt（イベントを実際に保持できているか）
+      const state = deferred && !snap.installed ? 'available'
         : snap.installed ? 'installed'
           : platform === 'ios' ? 'ios-manual'
             : 'unavailable';
 
       rowBtn.dataset.state = state;
+      rowBtn.hidden = false;
+
+      // 重要: ボタンは絶対に disabled にしない。
+      // disabled のボタンは click を発火せず「押しても無反応・ログも出ない」になる。
+      rowBtn.disabled = false;
+      rowBtn.removeAttribute('disabled');
+      if (state === 'available' || state === 'installed') rowBtn.removeAttribute('aria-disabled');
+      else rowBtn.setAttribute('aria-disabled', 'true');
 
       switch (state) {
         case 'installed':
           rowLabel.textContent = 'アプリインストール済み';
-          rowBtn.disabled = true;
-          rowBtn.setAttribute('aria-disabled', 'true');
           if (rowHint) rowHint.textContent = 'ホーム画面のアイコンから起動できます';
           break;
         case 'available':
           rowLabel.textContent = 'アプリをインストール';
-          rowBtn.disabled = false;
-          rowBtn.removeAttribute('aria-disabled');
           if (rowHint) rowHint.textContent = 'ホーム画面に追加して全画面で起動';
           break;
         case 'ios-manual':
           rowLabel.textContent = 'ホーム画面に追加（手順を見る）';
-          rowBtn.disabled = false;
-          rowBtn.removeAttribute('aria-disabled');
           if (rowHint) rowHint.textContent = 'Safari の共有メニューから追加できます';
           break;
         default:
-          rowLabel.textContent = 'インストール利用不可';
-          rowBtn.disabled = true;               // 仕様: クリック不可
-          rowBtn.setAttribute('aria-disabled', 'true');
-          if (rowHint) rowHint.textContent = '下の「PWA診断」で原因を確認できます';
+          rowLabel.textContent = 'アプリをインストール';
+          if (rowHint) rowHint.textContent = 'タップすると原因を確認できます';
       }
 
       if (installedNote) installedNote.hidden = state !== 'installed';
 
-      // 要件不足の説明（プロンプト不可 かつ iOS 以外 かつ 未インストール）
-      if (errorBox) {
-        const show = state === 'unavailable';
-        errorBox.hidden = !show;
-        if (show) renderErrorBox();
-      }
+      // 要件不足の説明は「押したとき」に出す（勝手に出すと押せない印象になる）
+      if (errorBox && state !== 'unavailable') errorBox.hidden = true;
     }
 
     if (banner) {
       if (snap.installed) hideBanner();
-      if (cta) cta.textContent = snap.canPrompt ? 'インストール' : (platform === 'ios' ? '手順を見る' : '詳細');
+      if (cta) cta.textContent = deferred ? 'インストール' : (platform === 'ios' ? '手順を見る' : '詳細');
       if (bannerText) {
-        bannerText.textContent = snap.canPrompt
+        bannerText.textContent = deferred
           ? 'アプリとして全画面で起動できます'
           : (platform === 'ios' ? '共有メニューからホーム画面に追加できます' : 'インストールできない原因を確認');
       }
@@ -317,32 +315,37 @@ export function initPWA() {
 
   /* ---------- インストール実行 ---------- */
   /**
-   * 要件（v1.2.3）:
-   *   deferredPrompt が無ければ alert('インストール準備ができていません') して終了。
-   *   あれば prompt() → userChoice を取得してログ出力。
+   * 要件（v1.2.4）:
+   *   1. console.log('Install Button Clicked')
+   *   2. window.deferredPrompt が無ければ alert('インストール準備ができていません')
+   *   3. console.log('Prompt Executed') → await window.deferredPrompt.prompt()
+   *   4. const result = await window.deferredPrompt.userChoice → console.log(result)
+   * コンソールから window.deferredPrompt.prompt() が動く環境では、この経路も必ず動く。
    */
   async function requestInstall({ fromBanner = false } = {}) {
-    log('Install Button Clicked', { ...installer.snapshot(), deferred: !!getDeferredPrompt() });
+    // 要件: 押下ログは最優先（何も出ない＝ハンドラ未到達の切り分けになる）
+    log('Install Button Clicked');
+
     adoptEarlyPrompt();
 
-    if (installer.installed) {
+    // 権威は window.deferredPrompt（installer 側の保持に依存しない）
+    const deferredPrompt = getDeferredPrompt();
+
+    if (installer.installed && !deferredPrompt) {
+      log('Already Installed');
       notify('すでにホーム画面に追加されています');
       syncUI();
       return { outcome: 'installed' };
     }
 
-    // iOS はそもそも beforeinstallprompt が存在しない（既存の手順案内を維持）
-    if (installer.platform === 'ios' && !getDeferredPrompt()) {
+    if (!deferredPrompt || typeof deferredPrompt.prompt !== 'function') {
+      log('Install Prompt Missing', { deferredPrompt: window.deferredPrompt, state: promptState() });
       if (fromBanner) hideBanner();
-      openDialog();
-      return { outcome: 'manual' };
-    }
-
-    const deferredPrompt = getDeferredPrompt();
-
-    if (!deferredPrompt) {
-      log('Install Prompt Missing', promptState());
-      if (fromBanner) hideBanner();
+      // iOS は beforeinstallprompt 自体が無いので手順案内
+      if (installer.platform === 'ios') {
+        openDialog();
+        return { outcome: 'manual' };
+      }
       alertSafe('インストール準備ができていません');
       if (errorBox) {
         errorBox.hidden = false;
@@ -353,24 +356,24 @@ export function initPWA() {
       return { outcome: 'unavailable' };
     }
 
-    // --- ここから prompt() 実行 ---
     if (fromBanner) hideBanner();
-    if (!installer.deferred) installer.capturePrompt(deferredPrompt);
 
+    // --- ここから prompt() ---
     log('Prompt Executed');
+
     let result = null;
     try {
       await deferredPrompt.prompt();
       result = await deferredPrompt.userChoice;
-      log(result);                      // 要件: console.log(result)
+      log(result);                       // 要件: console.log(result)
     } catch (e) {
-      log('Prompt Error', e && e.message);
+      log('Prompt Error', (e && e.message) || String(e));
       result = { outcome: 'error', message: (e && e.message) || String(e) };
-    } finally {
-      // prompt は 1 イベント 1 回だけ。参照を確実に手放す
-      setDeferredPrompt(null);
-      installer.deferred = null;
     }
+
+    // prompt は 1 イベント 1 回。使用後は参照を解放する
+    setDeferredPrompt(null);
+    installer.deferred = null;
 
     const outcome = (result && result.outcome) || 'dismissed';
     log('Install Result', { outcome });
@@ -383,12 +386,8 @@ export function initPWA() {
     }
 
     syncUI();
-    if (outcome === 'dismissed') {
-      openDialog();                     // もう一度促す代わりに手順を出す
-    } else {
-      openDialog();
-      notify('インストールを開始できませんでした。手順をご確認ください');
-    }
+    openDialog();
+    if (outcome !== 'dismissed') notify('インストールを開始できませんでした。手順をご確認ください');
     return { outcome };
   }
 
@@ -519,13 +518,37 @@ export function initPWA() {
   }
 
   /* ---------- イベント配線 ---------- */
-  if (rowBtn) {
-    rowBtn.addEventListener('click', (e) => {
+  /* インストールボタン: document の捕捉フェーズで受ける。
+     - ノード差し替え / stopPropagation / ラッパー要素の影響を受けない
+     - disabled にしないので click が必ず飛ぶ */
+  const INSTALL_SELECTOR = '#btn-install-app, .install-row';
+  let installBusy = false;
+
+  function onInstallActivate(e) {
+    const target = e.target && e.target.closest ? e.target.closest(INSTALL_SELECTOR) : null;
+    if (!target) return;
+    if (e.type === 'click') {
       e.preventDefault();
       e.stopPropagation();
-      requestInstall();
-    });
+    }
+    if (installBusy) return;
+    installBusy = true;
+    Promise.resolve()
+      .then(() => requestInstall())
+      .catch((err) => log('Install Handler Error', (err && err.message) || String(err)))
+      .finally(() => { setTimeout(() => { installBusy = false; }, 350); });
   }
+
+  document.addEventListener('click', onInstallActivate, true);
+
+  // キーボード操作（Enter / Space）でも同じ経路
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = document.activeElement;
+    if (!el || !el.closest || !el.closest(INSTALL_SELECTOR)) return;
+    e.preventDefault();
+    onInstallActivate({ type: 'keydown', target: el, preventDefault() {}, stopPropagation() {} });
+  }, true);
 
   const diagBtn = $('btn-pwa-diag');
   if (diagBtn) {

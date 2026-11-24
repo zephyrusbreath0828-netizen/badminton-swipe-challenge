@@ -93,7 +93,7 @@ function fakePromptEvent(outcome) {
   return { ev, calls };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 30));
+const settle = () => new Promise((r) => setTimeout(r, 80));
 
 /* ================================================================== */
 console.log('\n[1] Android Chrome: beforeinstallprompt → ネイティブダイアログ');
@@ -116,7 +116,8 @@ console.log('\n[1] Android Chrome: beforeinstallprompt → ネイティブダイ
   check('ボタン押下で prompt() が呼ばれる', calls.prompt === 1, String(calls.prompt));
   check('prompt() 後に deferredPrompt が解放される', win.deferredPrompt === null, String(win.deferredPrompt));
   check('インストール後は「アプリインストール済み」表示', label.textContent === 'アプリインストール済み', label.textContent);
-  check('インストール後はボタンが無効化（実質非表示相当）', btn.getAttribute('aria-disabled') === 'true');
+  check('インストール後は data-state=installed', btn.dataset.state === 'installed', btn.dataset.state);
+  check('ボタンは disabled にしない（押下ログが消えるため）', btn.disabled === false);
   check('インストール済み注記が表示される', win.document.getElementById('install-installed-note').hidden === false);
   check('installer が installed 状態', api.installer.installed === true);
 
@@ -151,10 +152,10 @@ console.log('\n[2] Android Chrome: プロンプトを閉じた場合（dismissed
 
   const row = win.document.getElementById('btn-install-app');
   const err = win.document.getElementById('install-error');
-  check('プロンプト消費後は「インストール利用不可」', win.document.getElementById('btn-install-app-label').textContent === 'インストール利用不可',
-    win.document.getElementById('btn-install-app-label').textContent);
-  check('利用不可時はボタンが無効', row.disabled === true);
-  check('要件不足の説明が表示される', err.hidden === false);
+  check('プロンプト消費後は data-state=unavailable', row.dataset.state === 'unavailable', row.dataset.state);
+  check('利用不可でもボタンは押せる（click を殺さない）', row.disabled === false);
+  check('利用不可は aria-disabled で示す', row.getAttribute('aria-disabled') === 'true');
+  check('押すまでは要件不足の説明を出さない', err.hidden === true);
 }
 
 /* ================================================================== */
@@ -340,6 +341,45 @@ console.log('\n[6c] deferredPrompt が無い状態でボタンを押す');
   await settle();
   check('deferredPrompt が無ければ alert を出す', alerted === 'インストール準備ができていません', String(alerted));
   check('要件不足の説明も表示される', win.document.getElementById('install-error').hidden === false);
+  check('未保持でもボタンは disabled にならない',
+    win.document.getElementById('btn-install-app').disabled === false);
+}
+
+console.log('\n[6d] 押下ログ / 委譲リスナー（v1.2.4）');
+{
+  const { win, mod } = await makeEnv(UA.android);
+  const { ev, calls } = fakePromptEvent('accepted');
+  win.deferredPrompt = ev;             // head が保持している状態を再現
+
+  const logs = [];
+  const orig = console.log;
+  console.log = (...a) => { logs.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); };
+
+  const api = mod.initPWA();
+  check('deferredPrompt 保持時はボタンが有効', win.document.getElementById('btn-install-app').disabled === false);
+
+  win.document.getElementById('btn-install-app')
+    .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  console.log = orig;
+
+  check("'Install Button Clicked' が出力される", logs.some((l) => l.includes('Install Button Clicked')), logs.join(' | '));
+  check("'Prompt Executed' が出力される", logs.some((l) => l.includes('Prompt Executed')), logs.join(' | '));
+  check('userChoice の結果がログに出る', logs.some((l) => l.includes('accepted')), logs.join(' | '));
+  check('実際に prompt() が呼ばれる', calls.prompt === 1, String(calls.prompt));
+
+  // --- ノード差し替え後でも動く（委譲リスナー） ---
+  const env2 = await makeEnv(UA.android);
+  const f2 = fakePromptEvent('dismissed');
+  env2.win.deferredPrompt = f2.ev;
+  const api2 = env2.mod.initPWA();
+  const oldBtn = env2.win.document.getElementById('btn-install-app');
+  const clone = oldBtn.cloneNode(true);      // リスナーを持たない複製
+  oldBtn.replaceWith(clone);                 // DOM 差し替え
+  clone.dispatchEvent(new env2.win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  check('DOM を差し替えてもボタンが動く', f2.calls.prompt === 1, String(f2.calls.prompt));
+  check('差し替え後もインストール導線が壊れない', typeof api2.runDiagnostics === 'function');
 }
 
 console.log('\n[7] PWA 診断（実API → 画面表示）');

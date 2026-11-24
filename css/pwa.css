@@ -444,6 +444,9 @@
 
 
 /* 診断オーバーレイ（Screens の .screen とは独立） */
+/* 閉じている間はレイアウトから完全に外す（Android でタップを奪わないため） */
+.diag-overlay[hidden] { display: none !important; }
+
 .diag-overlay {
   position: absolute;
   inset: 0;

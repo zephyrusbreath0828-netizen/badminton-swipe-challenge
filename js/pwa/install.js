@@ -466,12 +466,23 @@ export function initPWA() {
 
   function openDiag() {
     if (!diag) return;
+    window.__DIAG_OPEN__ = true;
+    diag.hidden = false;
+    diag.removeAttribute('hidden');
     diag.classList.add('is-on');
     diag.setAttribute('aria-hidden', 'false');
+    diag.style.pointerEvents = 'auto';
   }
 
   /** 全項目を実測して表示する（1項目の失敗で他の項目を落とさない） */
-  async function runDiagnostics({ show = true } = {}) {
+  async function runDiagnostics({ show = false } = {}) {
+    // v1.2.5: index.html のインライン診断エンジンを優先（モジュール非依存で必ず動く）
+    if (window.__PWA_DIAG__ && typeof window.__PWA_DIAG__.run === 'function') {
+      const res = await window.__PWA_DIAG__.run();
+      lastDiag = res;
+      if (show) openDiag();
+      return res;
+    }
     // 押した瞬間に前回の "-" を消す（空欄のまま見せない）
     document.querySelectorAll('.diag-row__value').forEach((el) => {
       if (el.textContent === '-' || el.textContent === '') el.textContent = 'Checking…';
@@ -555,7 +566,8 @@ export function initPWA() {
     diagBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      runDiagnostics();
+      openDiag();
+      runDiagnostics({ show: true }).catch(() => {});
     });
   }
 
@@ -564,13 +576,21 @@ export function initPWA() {
     const close = $('btn-diag-close');
     if (close) close.addEventListener('click', () => closeDiag());
     const again = $('btn-diag-rerun');
-    if (again) again.addEventListener('click', () => runDiagnostics());
+    if (again) again.addEventListener('click', () => runDiagnostics({ show: true }));
   }
 
   function closeDiag() {
+    // インラインエンジンに閉じる処理を委譲（hidden / pointer-events まで戻す）
+    if (window.__PWA_DIAG__ && typeof window.__PWA_DIAG__.close === 'function') {
+      window.__PWA_DIAG__.close();
+    }
+    window.__DIAG_OPEN__ = false;
     if (!diag) return;
     diag.classList.remove('is-on');
     diag.setAttribute('aria-hidden', 'true');
+    diag.style.pointerEvents = 'none';
+    diag.hidden = true;
+    diag.setAttribute('hidden', '');
   }
 
   if (banner) {
@@ -629,10 +649,9 @@ export function initPWA() {
   syncUI();
   scheduleBanner();
 
-  // 起動時に1回だけ自動診断（ログのみ）
-  setTimeout(() => {
-    runDiagnostics({ show: false }).catch(() => {});
-  }, 600);
+  // 起動時の自動診断は行わない（v1.2.6）。
+  // 診断は Settings の「PWA診断」を押したときだけ実行する。
+  closeDiag();
 
   window.__installer = installer;
   return { installer, requestInstall, openDialog, runDiagnostics, syncUI, getDiagnostics: () => lastDiag };

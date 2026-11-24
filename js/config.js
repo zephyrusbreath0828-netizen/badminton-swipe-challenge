@@ -6,7 +6,7 @@
  */
 
 export const CONFIG = {
-  version: '1.2.4',
+  version: '1.2.6',
 
   storage: {
     key: 'bsc.v1',

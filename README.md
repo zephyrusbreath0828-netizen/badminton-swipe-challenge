@@ -3,7 +3,7 @@
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
 v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で PWA診断が全項目「-」になる不具合を修正。v1.2.3 で `deferredPrompt` の保持を修正。v1.2.4 で **設定画面のインストールボタンが無反応になる不具合**を修正しました。
 
-- バージョン: **v1.2.4**
+- バージョン: **v1.2.5**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,34 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA
 
 
 ---
+
+## v1.2.5 の変更点（診断が「-」のまま／インストール済み表示）
+
+### 原因
+
+診断の描画が `install.js`（ESモジュール）に依存していたため、**モジュールが古いキャッシュから配信される / 例外で止まる**と、HTML に書かれた初期値 `-` がそのまま残りました。スタンドアロン起動では特に、インストール時点の service worker キャッシュが効きやすい経路です。
+
+### 修正
+
+診断エンジンを **`index.html` 内のインラインスクリプト**へ移設しました。
+
+- ESモジュール非依存（`import` なし・`install.js` が落ちても動く）
+- **起動直後に実測値を描画**（パネルを開く前から `-` が消える）
+- 同期値（Installed / Display Mode / HTTPS / beforeinstallprompt）は `await` を待たず即時反映
+- Service Worker / Manifest は独立した Promise で取得（片方が失敗しても他は表示）
+- パネルが開いたことを `MutationObserver` で監視し、未描画なら自動で再測定
+- 初期HTMLの `-` を廃止（`…` → 起動時に実測値へ置換）
+
+### インストール済み環境の表示
+
+| 項目 | 表示 |
+|---|---|
+| インストール状態 | `Installed`（`matchMedia(display-mode: standalone)` / `navigator.standalone`） |
+| Display Mode | `Standalone` |
+| beforeinstallprompt | `Unavailable (Installed)`（インストール済みでは発行されないのが正常） |
+| deferredPrompt | `null (installed)` |
+
+未インストール時は従来どおり `Prompt Available` / `Prompt Missing`。`Raw Data` には `installed` / `displayMode` / `deferredPrompt` / `promptReceived` などの実測値をそのまま出力します。
 
 ## v1.2.4 の変更点（インストールボタンが無反応）
 
@@ -567,6 +595,7 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.2.5** | **診断をインライン化（モジュール非依存）/ Installed・Standalone・Unavailable (Installed) 表示** |
 | **v1.2.4** | **インストールボタン無反応の修正（disabled廃止＋委譲リスナー）/ 押下ログ / 診断の実測表示** |
 | **v1.2.3** | **deferredPrompt をアプリ全体で保持 / prompt() 実行フロー / 診断に deferredPrompt 行を追加** |
 | **v1.2.2** | **診断が全項目「-」になる不具合を修正 / 実API取得（getRegistrations・isSecureContext・matchMedia）/ Raw Data / HTTPS行追加** |

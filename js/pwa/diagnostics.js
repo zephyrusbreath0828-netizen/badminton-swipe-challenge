@@ -304,25 +304,25 @@ export function checkPrompt(ctx = {}) {
   const raw = safe(() => window.deferredPrompt, null);
   const held = !!raw && typeof raw === 'object';
   const state = safe(() => window.__promptState, null) || {};
-  const received = Math.max(
-    Number(state.received) || 0,
-    held ? 1 : 0,
-    ctx.received ? 1 : 0,
-  );
+  const received = Math.max(Number(state.received) || 0, held ? 1 : 0, ctx.received ? 1 : 0);
   const consumed = state.consumed === true || ctx.consumed === true;
-  // 明示的に true が渡された場合も「利用可」とみなす（installer 側の保持）
+  const installed = ctx.installed === true;
   const available = held || (ctx.promptAvailable === true && !consumed);
 
   return {
     held,
     received,
     consumed,
+    installed,
     available,
     hasPromptFn: held ? safe(() => typeof raw.prompt === 'function', false) : false,
     receivedAt: Number(state.at) || null,
     source: ctx.promptSource || (held ? 'deferredPrompt' : consumed ? 'consumed' : received ? 'lost' : 'none'),
     label: available ? 'Prompt Available' : 'Prompt Missing',
-    deferredLabel: held ? 'Available (held)' : consumed ? 'Used (consumed)' : available ? 'Available' : 'null',
+    deferredLabel: held ? 'Available (held)'
+      : consumed ? 'Used (consumed)'
+        : installed ? 'null (installed)'
+          : available ? 'Available' : 'null',
   };
 }
 
@@ -332,8 +332,13 @@ export function checkPrompt(ctx = {}) {
 function buildLabelSet(s) {
   const labels = {
     installed: s.installed.installed ? 'Installed' : 'Not Installed',
-    prompt: s.prompt.available ? 'Prompt Available' : 'Prompt Missing',
-    deferredPrompt: s.prompt.deferredLabel,
+    prompt: s.installed.installed
+      ? 'Unavailable (Installed)'
+      : (s.prompt.available ? 'Prompt Available' : 'Prompt Missing'),
+    deferredPrompt: s.prompt.held ? 'Available (held)'
+      : s.prompt.consumed ? 'Used (consumed)'
+        : s.installed.installed ? 'null (installed)'
+          : s.prompt.deferredLabel,
     // 要件の表示例に合わせる（未取得は "Not Registered" / "Missing"）
     sw: s.sw ? (s.sw.registered ? 'Registered' : 'Not Registered') : 'Not Registered',
     manifest: s.manifest

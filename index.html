@@ -415,7 +415,7 @@ window.addEventListener('appinstalled', function () {
     </div>
 
     <!-- ============ PWA 診断 ============ -->
-    <div class="diag-overlay" id="screen-diagnostics" aria-hidden="true">
+    <div class="diag-overlay" id="screen-diagnostics" aria-hidden="true" hidden>
       <div class="panel panel--diag">
         <header class="panel__head">
           <h2 class="panel__title">PWA診断</h2>
@@ -425,31 +425,31 @@ window.addEventListener('appinstalled', function () {
         <div class="diag-list">
           <div class="diag-row" id="diag-installed" data-ok="0">
             <span class="diag-row__label">インストール状態</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-prompt" data-ok="0">
             <span class="diag-row__label">beforeinstallprompt</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-deferredprompt" data-ok="0">
             <span class="diag-row__label">deferredPrompt</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-sw" data-ok="0">
             <span class="diag-row__label">Service Worker</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-manifest" data-ok="0">
             <span class="diag-row__label">Manifest</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-secure" data-ok="0">
             <span class="diag-row__label">HTTPS</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
           <div class="diag-row" id="diag-display" data-ok="0">
             <span class="diag-row__label">Display Mode</span>
-            <span class="diag-row__value">-</span>
+            <span class="diag-row__value">&#8230;</span>
           </div>
         </div>
 
@@ -495,6 +495,446 @@ window.addEventListener('appinstalled', function () {
     <p class="rotate-notice__text">このゲームはスマートフォンの縦画面に最適化されています。<br />端末を縦にしてください。</p>
   </div>
 </div>
+<!-- =================================================================
+     PWA 診断エンジン（v1.2.5 / インライン実装）
+     -----------------------------------------------------------------
+     モジュールに依存しない。service worker の古いキャッシュ配信や
+     install.js の例外があっても、この診断だけは必ず動く。
+     値はすべてブラウザAPIの実測値。固定文言・ダミーは無い。
+     ================================================================= -->
+<script>
+(function () {
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+
+  function safe(fn, fallback) {
+    try { var v = fn(); return v === undefined ? fallback : v; } catch (e) { return fallback; }
+  }
+
+  function setRow(id, value, ok) {
+    var el = $(id);
+    if (!el) return;
+    var v = el.querySelector('.diag-row__value');
+    if (v) v.textContent = value; else el.textContent = value;
+    el.dataset.ok = ok ? '1' : '0';
+  }
+
+  function setText(id, value) {
+    var el = $(id);
+    if (el) el.textContent = value;
+  }
+
+  /* ---------------- 実測 ---------------- */
+  function mq(q) {
+    return safe(function () { return window.matchMedia(q).matches === true; }, false);
+  }
+
+  function displayMode() {
+    if (mq('(display-mode: standalone)')) return 'standalone';
+    if (mq('(display-mode: fullscreen)')) return 'fullscreen';
+    if (mq('(display-mode: minimal-ui)')) return 'minimal-ui';
+    if (mq('(display-mode: window-controls-overlay)')) return 'window-controls-overlay';
+    return 'browser';
+  }
+
+  function iosStandalone() {
+    return safe(function () { return window.navigator.standalone === true; }, false);
+  }
+
+  function installFlag() {
+    return safe(function () {
+      var raw = JSON.parse(window.localStorage.getItem('shuttleSmash.install') || '{}') || {};
+      return raw.installed === true;
+    }, false);
+  }
+
+  function isInstalled() {
+    var mode = displayMode();
+    return mode === 'standalone' || mode === 'fullscreen' || mode === 'minimal-ui'
+      || iosStandalone() || installFlag();
+  }
+
+  function syncSnapshot() {
+    var mode = displayMode();
+    var installed = isInstalled();
+    var deferred = safe(function () { return window.deferredPrompt || null; }, null);
+    var state = safe(function () { return window.__promptState || {}; }, {});
+    var secure = safe(function () { return window.isSecureContext === true; }, false);
+    var proto = safe(function () { return location.protocol; }, '');
+    var host = safe(function () { return location.hostname; }, '');
+    var ios = /iPad|iPhone|iPod/.test(safe(function () { return navigator.userAgent; }, ''))
+      || (safe(function () { return navigator.platform; }, '') === 'MacIntel'
+        && safe(function () { return navigator.maxTouchPoints; }, 0) > 1);
+
+    return {
+      at: Date.now(),
+      installed: installed,
+      installedBy: mode === 'standalone' || mode === 'fullscreen' ? ('display-mode: ' + mode)
+        : iosStandalone() ? 'navigator.standalone'
+          : installFlag() ? 'localStorage' : 'none',
+      displayMode: mode,
+      deferredPrompt: deferred && typeof deferred.prompt === 'function' ? deferred : null,
+      promptReceived: Math.max(Number(state.received) || 0, deferred ? 1 : 0),
+      promptConsumed: state.consumed === true,
+      secure: secure,
+      protocol: proto,
+      hostname: host,
+      ios: ios,
+    };
+  }
+
+  /* ---------------- ラベル（実際の状態を反映） ---------------- */
+  function applySync(s) {
+    var standalone = s.displayMode === 'standalone' || s.displayMode === 'fullscreen' || s.displayMode === 'minimal-ui';
+
+    setRow('diag-installed', s.installed ? 'Installed' : 'Not Installed', s.installed);
+    setRow('diag-display', standalone ? 'Standalone' : 'Browser', standalone);
+
+    // beforeinstallprompt: インストール済みなら取得できないのが正常
+    var promptLabel, promptOk;
+    if (s.installed) {
+      // インストール済みでは beforeinstallprompt は発行されない（残っていても使用不可）
+      promptLabel = 'Unavailable (Installed)';
+      promptOk = false;
+    } else if (s.deferredPrompt) {
+      promptLabel = 'Prompt Available';
+      promptOk = true;
+    } else if (s.promptConsumed) {
+      promptLabel = 'Prompt Missing';
+      promptOk = false;
+    } else {
+      promptLabel = 'Prompt Missing';
+      promptOk = false;
+    }
+    setRow('diag-prompt', promptLabel, promptOk);
+
+    var deferredLabel = s.deferredPrompt ? 'Available (held)'
+      : s.installed ? 'null (installed)'
+        : s.promptConsumed ? 'Used (consumed)' : 'null';
+    setRow('diag-deferredprompt', deferredLabel, !!s.deferredPrompt);
+
+    setRow('diag-secure', s.secure ? 'Secure' : 'Not Secure', s.secure);
+    setText('diag-secure-detail', (s.secure ? 'Secure' : 'Not Secure') + ' / ' + s.protocol + '//' + (s.hostname || '-'));
+
+    var ptext;
+    if (s.deferredPrompt) ptext = 'window.deferredPrompt: 保持中（prompt() あり）';
+    else if (s.installed) ptext = 'インストール済みのため beforeinstallprompt は発行されません';
+    else if (s.promptConsumed) ptext = 'window.deferredPrompt: 使用済み（prompt() は1イベント1回）';
+    else if (s.promptReceived > 0) ptext = 'window.deferredPrompt: null（受信したが保持されていない）';
+    else if (s.ios) ptext = 'iOS は beforeinstallprompt 非対応（共有メニューから追加）';
+    else ptext = 'beforeinstallprompt 未受信';
+    setText('diag-prompt-detail', ptext + ' / 受信 ' + s.promptReceived + ' 回');
+
+    setText('diag-time', new Date(s.at).toLocaleTimeString('ja-JP'));
+  }
+
+  function applyServiceWorker(sw) {
+    if (!sw) return;
+    setRow('diag-sw', sw.registered ? 'Registered' : 'Not Registered', sw.registered);
+    setText('diag-sw-detail', sw.registered
+      ? 'scope: ' + (sw.scope || '-') + ' / ' + (sw.state || '?') + (sw.controller ? ' / controlled' : ' / not controlling yet')
+      : (sw.error || '登録なし'));
+  }
+
+  function applyManifest(m) {
+    if (!m) return;
+    setRow('diag-manifest', m.loaded ? 'Loaded' : 'Missing', m.loaded);
+    setText('diag-manifest-detail', m.loaded
+      ? (m.name || '(no name)') + ' / icons ' + m.icons + ' / start_url ' + (m.startUrl || '-')
+      : (m.error || '読み込めない'));
+  }
+
+  /* ---------------- 非同期チェック ---------------- */
+  function checkSW() {
+    var nav = safe(function () { return navigator; }, {});
+    return new Promise(function (resolve) {
+      if (!('serviceWorker' in nav)) {
+        return resolve({ registered: false, error: 'serviceWorker 非対応（HTTPSでない / ブラウザ非対応）' });
+      }
+      var sw = safe(function () { return nav.serviceWorker; }, null);
+      if (!sw) return resolve({ registered: false, error: 'navigator.serviceWorker にアクセスできない' });
+
+      var controller = safe(function () { return !!sw.controller; }, false);
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        resolve({ registered: false, error: 'getRegistrations タイムアウト' });
+      }, 3000);
+
+      var finish = function (list, err) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (err) return resolve({ registered: false, error: err });
+        var regs = list || [];
+        if (!regs.length) return resolve({ registered: false, error: '登録なし（register() 未実行 or 失敗）' });
+        var reg = regs[0];
+        var worker = reg.active || reg.installing || reg.waiting;
+        resolve({
+          registered: true,
+          count: regs.length,
+          scope: safe(function () { return reg.scope; }, null),
+          state: worker ? safe(function () { return worker.state; }, null) : 'no-worker',
+          controller: controller,
+        });
+      };
+
+      try {
+        if (typeof sw.getRegistrations === 'function') {
+          sw.getRegistrations().then(function (r) { finish(r, null); },
+            function (e) { finish(null, 'getRegistrations 失敗: ' + (e && e.message)); });
+        } else if (typeof sw.getRegistration === 'function') {
+          sw.getRegistration().then(function (r) { finish(r ? [r] : [], null); },
+            function (e) { finish(null, 'getRegistration 失敗: ' + (e && e.message)); });
+        } else {
+          finish(null, 'getRegistrations / getRegistration が未実装');
+        }
+      } catch (e) {
+        finish(null, (e && e.message) || String(e));
+      }
+    });
+  }
+
+  function checkManifest() {
+    return new Promise(function (resolve) {
+      var link = safe(function () { return document.querySelector('link[rel="manifest"]'); }, null);
+      if (!link) return resolve({ linked: false, loaded: false, error: '<link rel="manifest"> が無い' });
+      var href = safe(function () { return link.getAttribute('href'); }, null);
+      if (!href) return resolve({ linked: true, loaded: false, error: 'href が空' });
+      if (typeof fetch !== 'function') return resolve({ linked: true, loaded: false, error: 'fetch API が無い' });
+
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        resolve({ linked: true, loaded: false, error: '取得タイムアウト' });
+      }, 4000);
+
+      var url = safe(function () { return new URL(href, location.href).href; }, href);
+      fetch(url, { cache: 'no-cache' }).then(function (res) {
+        if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : '???'));
+        return res.json();
+      }).then(function (json) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve({
+          linked: true,
+          loaded: true,
+          name: json.name || null,
+          startUrl: json.start_url || null,
+          icons: Array.isArray(json.icons) ? json.icons.length : 0,
+        });
+      }).catch(function (e) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve({ linked: true, loaded: false, error: (e && e.message) || String(e) });
+      });
+    });
+  }
+
+  /* ---------------- 実行 ---------------- */
+  var lastResult = null;
+
+  function buildReasons(s, sw, m) {
+    var reasons = [];
+    if (!s.secure) reasons.push('HTTPSではない（localhost 以外では Service Worker も動きません）');
+    if (sw && !sw.registered) reasons.push('Service Worker: ' + (sw.error || '未登録'));
+    if (m && !m.loaded) reasons.push('Manifest: ' + (m.error || '読み込めない'));
+    if (s.installed) reasons.push('インストール済み（' + s.installedBy + '）— beforeinstallprompt は発行されません');
+    else if (!s.deferredPrompt) {
+      reasons.push(s.promptConsumed
+        ? 'deferredPrompt 使用済み（prompt() は1イベントにつき1回）'
+        : 'beforeinstallprompt 未受信（条件未達 or ブラウザ非対応）');
+    }
+    return reasons;
+  }
+
+  function renderRaw(s, sw, m) {
+    var raw = {
+      serviceWorker: !!(sw && sw.registered),
+      manifest: !!(m && m.loaded),
+      secure: s.secure,
+      installPrompt: !!s.deferredPrompt,
+      installed: s.installed,
+      displayMode: s.displayMode,
+      deferredPrompt: !!s.deferredPrompt,
+      promptReceived: s.promptReceived,
+      promptConsumed: s.promptConsumed,
+      installedBy: s.installedBy,
+      details: {
+        swScope: sw ? (sw.scope || null) : null,
+        swState: sw ? (sw.state || null) : null,
+        swControlled: sw ? !!sw.controller : null,
+        swError: sw ? (sw.error || null) : null,
+        manifestHref: m ? (m.linked ? 'manifest.json' : null) : null,
+        manifestName: m ? (m.name || null) : null,
+        manifestStartUrl: m ? (m.startUrl || null) : null,
+        manifestIcons: m ? (m.icons || 0) : null,
+        manifestError: m ? (m.error || null) : null,
+        protocol: s.protocol,
+        hostname: s.hostname,
+        ua: safe(function () { return navigator.userAgent; }, ''),
+        at: new Date(s.at).toISOString(),
+      },
+    };
+    var el = $('diag-raw');
+    if (el) el.textContent = JSON.stringify(raw, null, 2);
+    return raw;
+  }
+
+  function renderReasons(list) {
+    var el = $('diag-reasons');
+    if (!el) return;
+    el.innerHTML = list.length
+      ? list.map(function (r) { return '<li>' + r + '</li>'; }).join('')
+      : '<li class="is-ok">問題は見つかりませんでした。</li>';
+  }
+
+  function open() {
+    var el = $('screen-diagnostics');
+    if (!el) return;
+    window.__DIAG_OPEN__ = true;
+    el.hidden = false;
+    el.removeAttribute('hidden');
+    el.classList.add('is-on');
+    el.setAttribute('aria-hidden', 'false');
+    el.style.pointerEvents = 'auto';
+  }
+
+  /** 完全に閉じる: クラス・属性・hidden・pointer-events をすべて戻す */
+  function close() {
+    var el = $('screen-diagnostics');
+    window.__DIAG_OPEN__ = false;
+    if (!el) return;
+    el.classList.remove('is-on');
+    el.setAttribute('aria-hidden', 'true');
+    el.style.pointerEvents = 'none';
+    // 背景オーバーレイ自体をレイアウトから外す（タップを一切奪わない）
+    el.hidden = true;
+    el.setAttribute('hidden', '');
+  }
+
+  function run() {
+    var s = syncSnapshot();
+
+    // 1) 同期値は即時反映（await を待たない）
+    applySync(s);
+    setRow('diag-sw', 'Checking\u2026', false);
+    setRow('diag-manifest', 'Checking\u2026', false);
+
+    // 2) 非同期値も独立に反映（どちらかが失敗しても他は出る）
+    var swP = checkSW().catch(function (e) { return { registered: false, error: (e && e.message) || String(e) }; });
+    var mP = checkManifest().catch(function (e) { return { linked: false, loaded: false, error: (e && e.message) || String(e) }; });
+
+    return Promise.all([swP, mP]).then(function (res) {
+      var sw = res[0], m = res[1];
+      applyServiceWorker(sw);
+      applyManifest(m);
+      var raw = renderRaw(s, sw, m);
+      renderReasons(buildReasons(s, sw, m));
+      lastResult = { at: s.at, sync: s, sw: sw, manifest: m, raw: raw };
+      try { console.log(lastResult); } catch (e) {}
+      try { console.log('PWA Diagnostics Result', raw); } catch (e) {}
+      return lastResult;
+    });
+  }
+
+  window.__PWA_DIAG__ = {
+    run: run,
+    open: open,
+    close: close,
+    snapshot: function () { return syncSnapshot(); },
+    get last() { return lastResult; },
+  };
+
+  /* ---------------- 起動時に実測値を入れておく（"-" を残さない） ---------------- */
+  function boot() {
+    try { console.log('PWA Diagnostics'); } catch (e) {}
+    // 起動時は「ホーム画面 → Play」を最優先。診断は Settings から開いた時だけ実行する。
+    // 値の初期化だけ行い、モーダルは開かない。
+    close();
+    applySync(syncSnapshot());
+  }
+
+  /* ---------------- 配線（install.js が落ちていても動く） ---------------- */
+  var busy = false;
+  function onTrigger(e) {
+    var t = e.target;
+    var hitBtn = t && t.closest && t.closest('#btn-pwa-diag');
+    if (!hitBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) return;
+    busy = true;
+    open();
+    run().catch(function () {}).then(function () { setTimeout(function () { busy = false; }, 200); });
+  }
+  document.addEventListener('click', onTrigger, true);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var a = document.activeElement;
+    if (!a || !a.closest || !a.closest('#btn-pwa-diag')) return;
+    onTrigger({ target: a, preventDefault: function () {}, stopPropagation: function () {} });
+  }, true);
+
+  /* ---------------- 閉じる操作 ---------------- */
+  function isCloseTarget(t) {
+    if (!t || !t.closest) return false;
+    if (t.closest('#btn-diag-close')) return true;                 // 閉じるボタン
+    var overlay = $('screen-diagnostics');
+    if (overlay && t === overlay) return true;                     // 背景（オーバーレイ）タップ
+    return false;
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!isCloseTarget(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+  }, true);
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!window.__DIAG_OPEN__) return;
+    close();
+  }, true);
+
+  // 起動直後に何らかの理由で開いていたら必ず閉じる（保険）
+  function forceClosedAtBoot() {
+    close();
+  }
+
+  // パネルが開いたら必ず再測定（外部から開かれた場合の保険）
+  function watchOverlay() {
+    var el = $('screen-diagnostics');
+    if (!el || typeof MutationObserver !== 'function') return;
+    new MutationObserver(function () {
+      if (el.classList.contains('is-on')) {
+        var first = el.querySelector('.diag-row__value');
+        if (first && (first.textContent === '\u2026' || first.textContent === '-')) run().catch(function () {});
+      }
+    }).observe(el, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { boot(); forceClosedAtBoot(); watchOverlay(); });
+  } else {
+    boot();
+    forceClosedAtBoot();
+    watchOverlay();
+  }
+
+  // 復帰時（バックグラウンド → 前面）も開いたままにしない
+  window.addEventListener('pageshow', forceClosedAtBoot);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') forceClosedAtBoot();
+  });
+})();
+</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

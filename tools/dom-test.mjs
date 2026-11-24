@@ -322,7 +322,7 @@ console.log('\n[6b] deferredPrompt（v1.2.3）');
 
   // 使用後の診断
   const d2 = await api.runDiagnostics({ show: true });
-  check('診断: 使用後は Prompt Missing', d2.labels.prompt === 'Prompt Missing', d2.labels.prompt);
+  check('診断: インストール後は Unavailable (Installed)', d2.labels.prompt === 'Unavailable (Installed)', d2.labels.prompt);
   check('診断: 使用後も受信履歴は残る', d2.raw.promptReceived === 1, String(d2.raw.promptReceived));
   check('診断: 使用後は Used (consumed)',
     win.document.querySelector('#diag-deferredprompt .diag-row__value').textContent === 'Used (consumed)',
@@ -382,6 +382,45 @@ console.log('\n[6d] 押下ログ / 委譲リスナー（v1.2.4）');
   check('差し替え後もインストール導線が壊れない', typeof api2.runDiagnostics === 'function');
 }
 
+console.log('\n[6e] 診断モーダルの自動表示禁止 / 閉じる（v1.2.6）');
+{
+  const { win, mod } = await makeEnv(UA.android);
+  mod.initPWA();
+  await settle();
+
+  const overlay = win.document.getElementById('screen-diagnostics');
+  check('起動直後に診断モーダルが開かない', !overlay.classList.contains('is-on'),
+    overlay.className);
+  check('起動直後は hidden 属性でレイアウトから外れている', overlay.hidden === true);
+  // 注: このテストは install.js のみを読み込むため main.js の画面遷移は走らない。
+  // ここでは「診断モーダルが前面に出ていない」ことだけを検証する。
+  check('診断オーバーレイが前面に出ていない', !overlay.classList.contains('is-on'));
+
+  // 起動時の自動 runDiagnostics が走らないこと（タイマー後も閉じたまま）
+  await new Promise((r) => setTimeout(r, 400));
+  check('時間経過しても自動で開かない', overlay.hidden === true && !overlay.classList.contains('is-on'));
+
+  // Settings → 診断ボタンで開く
+  win.document.getElementById('btn-pwa-diag')
+    .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  check('診断ボタンで開く', overlay.classList.contains('is-on') && overlay.hidden === false,
+    `${overlay.className} hidden=${overlay.hidden}`);
+  check('開いたら操作可能（pointer-events:auto）',
+    overlay.style.pointerEvents === 'auto', overlay.style.pointerEvents);
+
+  // 閉じるボタン
+  win.document.getElementById('btn-diag-close')
+    .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  check('閉じるで is-on が外れる', !overlay.classList.contains('is-on'), overlay.className);
+  check('閉じるで hidden 属性が付く', overlay.hidden === true);
+  check('閉じるで pointer-events が none に戻る', overlay.style.pointerEvents === 'none',
+    overlay.style.pointerEvents);
+  check('閉じた後に __DIAG_OPEN__ が false', win.__DIAG_OPEN__ === false, String(win.__DIAG_OPEN__));
+  check('閉じた後も Play ボタンが押せる状態', !win.document.getElementById('btn-start').disabled);
+}
+
 console.log('\n[7] PWA 診断（実API → 画面表示）');
 {
   const { win } = await makeEnv(UA.android);
@@ -430,6 +469,9 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
   check('standalone 時は Installed', d2.labels.installed === 'Installed', d2.labels.installed);
   check('standalone 時は Standalone 表示', d2.labels.display === 'Standalone', d2.labels.display);
   check('standalone 時は raw.installed=true', d2.raw.installed === true, String(d2.raw.installed));
+  check('インストール済みは Unavailable (Installed)', d2.labels.prompt === 'Unavailable (Installed)', d2.labels.prompt);
+  check('インストール済みの deferredPrompt は null (installed)',
+    d2.labels.deferredPrompt === 'null (installed)', String(d2.labels.deferredPrompt));
 
   /* ---- 劣化試験: どれか1つが失敗しても "-" を残さない ---- */
   const valuesOf = (w) => [...w.document.querySelectorAll('.diag-row__value')].map((e) => e.textContent);

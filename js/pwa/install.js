@@ -307,62 +307,112 @@ export function initPWA() {
   }
 
   /* ---------- PWA 診断 ---------- */
-  async function runDiagnostics({ show = true } = {}) {
-    const d = await collectDiagnostics({
-      promptAvailable: installer.canPrompt,
-      installed: installer.installed,
-      promptSource: installer.canPrompt ? (window.__installPrompt ? 'early' : 'captured') : 'none',
-    });
-    lastDiag = d;
+  /** 診断結果（部分でも可）を DOM に反映する */
+  function renderDiag(d) {
+    const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    const setOk = (id, ok) => { const el = $(id); if (el) el.dataset.ok = ok ? '1' : '0'; };
+    // 行のラベル(<span class="diag-row__label">)を壊さず値だけ更新する
+    const setRow = (id, v) => {
+      const el = $(id);
+      if (!el) return;
+      const val = el.querySelector('.diag-row__value');
+      if (val) val.textContent = v;
+      else el.textContent = v;
+    };
+    if (!d || !d.labels) return;
 
-    if (diag) {
-      const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-      const setOk = (id, ok) => { const el = $(id); if (el) el.dataset.ok = ok ? '1' : '0'; };
-      // 行のラベル(<span class="diag-row__label">)を壊さず値だけ更新する
-      const setRow = (id, v) => {
-        const el = $(id);
-        if (!el) return;
-        const val = el.querySelector('.diag-row__value');
-        if (val) val.textContent = v;
-        else el.textContent = v;
-      };
+    setRow('diag-installed', d.labels.installed);
+    setOk('diag-installed', !!(d.installed && d.installed.installed));
+    setRow('diag-prompt', d.labels.prompt);
+    setOk('diag-prompt', !!(d.prompt && d.prompt.available));
+    setRow('diag-sw', d.labels.sw);
+    setOk('diag-sw', !!(d.sw && d.sw.registered));
+    setRow('diag-manifest', d.labels.manifest);
+    setOk('diag-manifest', !!(d.manifest && d.manifest.loaded));
+    setRow('diag-secure', d.labels.secure);
+    setOk('diag-secure', !!(d.secure && d.secure.secure));
+    setRow('diag-display', d.labels.display);
+    setOk('diag-display', !!(d.installed && (d.installed.displayMode === 'standalone' || d.installed.displayMode === 'fullscreen')));
 
-      setRow('diag-installed', d.labels.installed);
-      setOk('diag-installed', d.installed);
-      setRow('diag-prompt', d.labels.prompt);
-      setOk('diag-prompt', d.promptAvailable);
-      setRow('diag-sw', d.labels.sw);
-      setOk('diag-sw', d.sw.registered);
-      setRow('diag-manifest', d.labels.manifest);
-      setOk('diag-manifest', d.manifest.loaded);
-      setRow('diag-display', d.labels.display);
-      setOk('diag-display', d.displayMode === 'standalone' || d.displayMode === 'fullscreen');
-
+    if (d.sw) {
       setText('diag-sw-detail', d.sw.registered
-        ? `scope: ${d.sw.scope} / ${d.sw.state}${d.sw.controller ? ' / controlled' : ' / not controlling yet'}`
-        : (d.sw.error || '未登録'));
+        ? `scope: ${d.sw.scope || '-'} / ${d.sw.state || '?'}${d.sw.controller ? ' / controlled' : ' / not controlling yet'}`
+        : `${d.sw.error || '登録なし'}${d.sw.supported ? '' : '（serviceWorker 非対応）'}`);
+    }
+    if (d.manifest) {
       setText('diag-manifest-detail', d.manifest.loaded
         ? `${d.manifest.name || '(no name)'} / icons ${d.manifest.icons} / start_url ${d.manifest.startUrl || '-'}`
-        : (d.manifest.error || '未読込'));
-      setText('diag-secure-detail', d.secure ? 'HTTPS / localhost（OK）' : 'HTTPSではない');
-      setText('diag-prompt-detail', d.promptAvailable
-        ? `source: ${d.promptSource}`
-        : (d.ios ? 'iOS は beforeinstallprompt 非対応' : 'beforeinstallprompt 未発火'));
+        : `${d.manifest.error || '読み込めない'}${d.manifest.linked ? '' : '（<link rel="manifest"> 無し）'}`);
+    }
+    if (d.prompt) {
+      setText('diag-prompt-detail', d.prompt.available
+        ? `source: ${d.prompt.source}`
+        : (env.isIOS ? 'iOS は beforeinstallprompt 非対応（共有メニューから追加）' : 'beforeinstallprompt 未発火'));
+    }
+    if (d.secure) {
+      setText('diag-secure-detail', `${d.secure.label} / ${d.secure.protocol}//${d.secure.hostname || '-'}${d.secure.note ? ` / ${d.secure.note}` : ''}`);
+    }
 
+    const rawEl = $('diag-raw');
+    if (rawEl && d.raw) rawEl.textContent = JSON.stringify(d.raw, null, 2);
+
+    const reasonsEl = $('diag-reasons');
+    if (reasonsEl && Array.isArray(d.reasons)) {
+      reasonsEl.innerHTML = d.reasons.length
+        ? d.reasons.map((r) => `<li>${r}</li>`).join('')
+        : '<li class="is-ok">問題は見つかりませんでした。インストールできます。</li>';
+    }
+    setText('diag-time', new Date(d.at).toLocaleTimeString('ja-JP'));
+  }
+
+  function openDiag() {
+    if (!diag) return;
+    diag.classList.add('is-on');
+    diag.setAttribute('aria-hidden', 'false');
+  }
+
+  /** 全項目を実測して表示する（1項目の失敗で他の項目を落とさない） */
+  async function runDiagnostics({ show = true } = {}) {
+    // 押した瞬間に前回の "-" を消す（空欄のまま見せない）
+    document.querySelectorAll('.diag-row__value').forEach((el) => {
+      if (el.textContent === '-' || el.textContent === '') el.textContent = 'Checking…';
+    });
+
+    const ctx = {
+      promptAvailable: installer.canPrompt,
+      installed: installer.installed,
+      promptSource: window.__installPrompt ? 'early-capture' : (installer.canPrompt ? 'captured' : 'none'),
+    };
+
+    let final = null;
+    try {
+      // onPartial: 取れた項目から順に描画（部分表示を保証）
+      final = await collectDiagnostics(ctx, (partial) => {
+        renderDiag(partial);
+        if (show) openDiag();
+      });
+    } catch (e) {
+      log('Diagnostics Failed', e && e.message);
+      const msg = `診断に失敗しました: ${e && e.message ? e.message : e}`;
+      document.querySelectorAll('.diag-row__value').forEach((el) => {
+        if (el.textContent === '-' || el.textContent === 'Checking…') el.textContent = 'Error';
+      });
       const reasonsEl = $('diag-reasons');
-      if (reasonsEl) {
-        reasonsEl.innerHTML = d.reasons.length
-          ? d.reasons.map((r) => `<li>${r}</li>`).join('')
-          : '<li class="is-ok">問題は見つかりませんでした。インストールできます。</li>';
-      }
-      setText('diag-time', new Date(d.at).toLocaleTimeString('ja-JP'));
+      if (reasonsEl) reasonsEl.innerHTML = `<li>${msg}</li>`;
+      const rawEl = $('diag-raw');
+      if (rawEl) rawEl.textContent = JSON.stringify({ error: String((e && e.stack) || e) }, null, 2);
+      if (show) openDiag();
+      return null;
     }
 
-    if (show && diag) {
-      diag.classList.add('is-on');
-      diag.setAttribute('aria-hidden', 'false');
-    }
-    return d;
+    lastDiag = final;
+    renderDiag(final);
+    if (show) openDiag();
+
+    // 要件: 診断時に console.log(diagnostics)
+    try { console.log(final); } catch (e) { /* noop */ }
+    log('PWA Diagnostics Result', final.raw);
+    return final;
   }
 
   /* ---------- イベント配線 ---------- */

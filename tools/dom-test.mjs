@@ -57,6 +57,8 @@ async function makeEnv(ua, { standalone = false } = {}) {
     addListener() {},
     removeListener() {},
   });
+  // jsdom は isSecureContext を算出しないため、https URL 相当として明示する
+  Object.defineProperty(win, 'isSecureContext', { value: true, configurable: true });
   // Node の globals を jsdom に差し替え
   const define = (key, value) => {
     try {
@@ -279,57 +281,99 @@ console.log('\n[6] セーブ（localStorage）');
 }
 
 /* ================================================================== */
-console.log('\n[7] PWA 診断（collectDiagnostics）');
+console.log('\n[7] PWA 診断（実API → 画面表示）');
 {
   const { win } = await makeEnv(UA.android);
   const diag = await import(`${path.join(ROOT, 'js/pwa/diagnostics.js')}?d=${Math.random()}`);
 
-  // manifest / SW をスタブ
   const manifestJson = {
     name: 'Shuttle Smash', short_name: 'Shuttle Smash', start_url: '/', display: 'standalone',
     icons: [{ sizes: '192x192' }, { sizes: '512x512' }],
   };
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => manifestJson });
+  const fetchOk = async () => ({ ok: true, status: 200, json: async () => manifestJson });
+  const fetch404 = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  const fetchThrow = async () => { throw new Error('offline'); };
+  globalThis.fetch = fetchOk;
+
+  const regs = [{ scope: 'https://example.test/', active: { state: 'activated' } }];
   Object.defineProperty(win.navigator, 'serviceWorker', {
-    value: {
-      getRegistration: async () => ({ scope: 'https://example.test/', active: { state: 'activated' } }),
-      controller: {},
-      addEventListener() {},
-    },
+    value: { getRegistrations: async () => regs, controller: {}, addEventListener() {} },
     configurable: true,
   });
 
   const d = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
   check('Installed ラベル', d.labels.installed === 'Not Installed', d.labels.installed);
   check('beforeinstallprompt ラベル', d.labels.prompt === 'Not Available', d.labels.prompt);
-  check('Service Worker ラベル', d.labels.sw === 'Registered', d.labels.sw);
-  check('Manifest ラベル', d.labels.manifest === 'Loaded', d.labels.manifest);
+  check('SW は getRegistrations() 経由で Registered',
+    d.labels.sw === 'Registered' && d.sw.api === 'getRegistrations', `${d.labels.sw}/${d.sw.api}`);
+  check('Manifest ラベル Loaded', d.labels.manifest === 'Loaded', d.labels.manifest);
+  check('HTTPS ラベル Secure', d.labels.secure === 'Secure', d.labels.secure);
   check('Display Mode ラベル', ['Browser', 'Standalone'].includes(d.labels.display), d.labels.display);
-  check('Manifest の中身を読めている', d.manifest.icons === 2 && d.manifest.name === 'Shuttle Smash',
-    JSON.stringify(d.manifest));
-  check('原因リストに beforeinstallprompt 未発火が含まれる',
-    d.reasons.some((r) => r.includes('beforeinstallprompt')), d.reasons.join(' / '));
+  check('Raw Data が要件の6キーを持つ',
+    ['serviceWorker', 'manifest', 'secure', 'installPrompt', 'installed', 'displayMode'].every((k) => k in d.raw),
+    JSON.stringify(d.raw));
+  check('Raw Data が実測値（SW/Manifest=true, prompt=false）',
+    d.raw.serviceWorker === true && d.raw.manifest === true && d.raw.installPrompt === false && d.raw.installed === false,
+    JSON.stringify(d.raw));
 
-  // standalone 判定
+  Object.defineProperty(win, 'isSecureContext', { value: false, configurable: true });
+  const dInsecure = await diag.collectDiagnostics({ promptAvailable: false });
+  check('isSecureContext=false は Not Secure', dInsecure.labels.secure === 'Not Secure', dInsecure.labels.secure);
+  Object.defineProperty(win, 'isSecureContext', { value: true, configurable: true });
+
+  const d1 = await diag.collectDiagnostics({ promptAvailable: true, promptSource: 'captured' });
+  check('prompt 捕捉時は Available', d1.labels.prompt === 'Available' && d1.raw.installPrompt === true, d1.labels.prompt);
+
   const { win: w2 } = await makeEnv(UA.android, { standalone: true });
   const d2 = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
   check('standalone 時は Installed', d2.labels.installed === 'Installed', d2.labels.installed);
-  check('standalone 時は Display Mode = Standalone', d2.labels.display === 'Standalone', d2.labels.display);
+  check('standalone 時は Standalone 表示', d2.labels.display === 'Standalone', d2.labels.display);
+  check('standalone 時は raw.installed=true', d2.raw.installed === true, String(d2.raw.installed));
 
-  // UI 側: 診断行のラベルが消えないこと
+  /* ---- 劣化試験: どれか1つが失敗しても "-" を残さない ---- */
+  const valuesOf = (w) => [...w.document.querySelectorAll('.diag-row__value')].map((e) => e.textContent);
+  const noDash = (vals) => vals.length === 6 && vals.every((v) => v && v !== '-' && v !== 'Checking…');
+  const rowOf = (w, id) => w.document.querySelector(`#${id} .diag-row__value`).textContent;
+
+  // (a) Service Worker 非対応（jsdom 既定）
+  const envA = await makeEnv(UA.desktop);
+  globalThis.fetch = fetchOk;
+  await envA.mod.initPWA().runDiagnostics({ show: true });
+  check('SW未対応でも全行に値が入る', noDash(valuesOf(envA.win)), valuesOf(envA.win).join(' | '));
+  check('SW未対応は Not Registered', rowOf(envA.win, 'diag-sw') === 'Not Registered', rowOf(envA.win, 'diag-sw'));
+
+  // (b) manifest 404
+  const envB = await makeEnv(UA.desktop);
+  globalThis.fetch = fetch404;
+  await envB.mod.initPWA().runDiagnostics({ show: true });
+  check('manifest 404 でも全行に値が入る', noDash(valuesOf(envB.win)), valuesOf(envB.win).join(' | '));
+  check('manifest 404 は Missing', rowOf(envB.win, 'diag-manifest') === 'Missing', rowOf(envB.win, 'diag-manifest'));
+
+  // (c) fetch 例外（オフライン相当）
+  const envC = await makeEnv(UA.desktop);
+  globalThis.fetch = fetchThrow;
+  await envC.mod.initPWA().runDiagnostics({ show: true });
+  check('fetch 例外でも全行に値が入る', noDash(valuesOf(envC.win)), valuesOf(envC.win).join(' | '));
+
+  // (d) 通常時: 行数・ラベル保持・Raw Data JSON
   const { win: w3, mod: mod3 } = await makeEnv(UA.desktop);
+  globalThis.fetch = fetchOk;
   const api3 = mod3.initPWA();
-  await api3.runDiagnostics({ show: true });
+  const d3 = await api3.runDiagnostics({ show: true });
   const rows = [...w3.document.querySelectorAll('.diag-row')];
-  check('診断行が5件ある', rows.length === 5, String(rows.length));
+  check('診断行が6件ある（HTTPS含む）', rows.length === 6, String(rows.length));
   const labelsKept = rows.every((r) => {
     const l = r.querySelector('.diag-row__label');
     const v = r.querySelector('.diag-row__value');
     return l && l.textContent.trim().length > 0 && v && v.textContent !== '-';
   });
-  check('項目名と値の両方が表示される', labelsKept,
-    rows.map((r) => r.textContent.trim()).join(' | '));
+  check('項目名と値の両方が表示される', labelsKept, rows.map((r) => r.textContent.trim()).join(' | '));
+  let parsed = null;
+  try { parsed = JSON.parse(w3.document.getElementById('diag-raw').textContent); } catch (e) { /* noop */ }
+  check('Raw Data が JSON として表示される', !!parsed && typeof parsed.displayMode === 'string',
+    String(w3.document.getElementById('diag-raw').textContent).slice(0, 90));
   check('診断パネルが開く', w3.document.getElementById('screen-diagnostics').classList.contains('is-on'));
+  check('runDiagnostics が結果を返す', !!d3 && typeof d3.labels.sw === 'string');
 }
 
 console.log(`\n結果: ${failures === 0 ? `ALL PASS (${checks} checks)` : `${failures} FAILED / ${checks} checks`}\n`);

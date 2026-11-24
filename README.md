@@ -1,9 +1,9 @@
 # 🏸 Shuttle Smash
 
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
-v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で **PWAインストール不具合の真因を修正＋診断機能**を追加しました。
+v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で **PWA診断が全項目「-」になる不具合**を修正し、`Raw Data` 表示を追加しました。
 
-- バージョン: **v1.2.1**
+- バージョン: **v1.2.2**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,50 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で **P
 
 
 ---
+
+## v1.2.2 の変更点（診断の全面作り直し）
+
+v1.2.1 の診断は、`await` を1本の直列処理で並べていたため、**どこか1つのブラウザAPIが失敗/未解決になると 5 項目すべてが「-」のまま**残る構造でした。v1.2.2 ではこの構造自体を廃止しています。
+
+- 各項目を**独立に try/catch** で評価（`Promise.allSettled` 相当）。1項目の失敗が他項目を巻き込まない
+- 取得できた項目から**順次描画**（`onPartial`）。全項目が出そろう前に画面が真っ白にならない
+- 例外が出ても値を `Error` として表示し、**必ず `Raw Data`（JSON）を出す**ので原因が画面で分かる
+- 押下直後に「-」を `Checking…` へ置換（取得中であることが見える）
+
+### 実際に叩いているブラウザAPI
+
+| 項目 | 取得方法 | 表示 |
+|---|---|---|
+| Service Worker | `navigator.serviceWorker.getRegistrations()`（旧ブラウザは `getRegistration()` にフォールバック、3秒タイムアウト） | `Registered` / `Not Registered` |
+| Manifest | `document.querySelector('link[rel="manifest"]')` の存在確認 ＋ `fetch(href)` で中身を検証 | `Loaded` / `Missing` |
+| HTTPS | `window.isSecureContext` | `Secure` / `Not Secure` |
+| Display Mode | `window.matchMedia('(display-mode: standalone)')` | `Standalone` / `Browser` |
+| beforeinstallprompt | 捕捉済みイベントの有無 | `Available` / `Not Available` |
+| インストール状態 | `matchMedia('(display-mode: standalone)').matches` または `navigator.standalone` | `Installed` / `Not Installed` |
+
+### Raw Data
+
+診断モーダル最下部に、実測値をそのまま JSON で表示します。
+
+```json
+{
+  "serviceWorker": true,
+  "manifest": true,
+  "secure": true,
+  "installPrompt": false,
+  "installed": false,
+  "displayMode": "browser"
+}
+```
+
+`details` には scope / SW state / manifest の start_url / icons 数 / エラー内容 / UA なども入ります。
+
+### コンソール
+
+- 起動時: `PWA Diagnostics`
+- 診断時: `console.log(diagnostics)`（診断オブジェクト全体）＋ `PWA Diagnostics Result`（Raw Data）
+
+> 注: `file://` で直接開いた場合や、プレビュー生成時に `<link rel="manifest">` が除去される環境では、`Manifest: Missing` / `Secure: Not Secure` / `SW: Not Registered` になります。これは**実測どおりの正しい結果**です。HTTPS 配信（Vercel / GitHub Pages）で確認してください。
 
 ## v1.2.1 の変更点（不具合修正）
 
@@ -431,6 +475,7 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.2.2** | **診断が全項目「-」になる不具合を修正 / 実API取得（getRegistrations・isSecureContext・matchMedia）/ Raw Data / HTTPS行追加** |
 | v1.3 | トーナメントモード、ラケット収集 |
 | v2.0 | ダブルス、オンライン対戦、リプレイ機能 |
 

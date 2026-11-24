@@ -425,6 +425,10 @@
             <span class="diag-row__label">Manifest</span>
             <span class="diag-row__value">-</span>
           </div>
+          <div class="diag-row" id="diag-secure" data-ok="0">
+            <span class="diag-row__label">HTTPS</span>
+            <span class="diag-row__value">-</span>
+          </div>
           <div class="diag-row" id="diag-display" data-ok="0">
             <span class="diag-row__label">Display Mode</span>
             <span class="diag-row__value">-</span>
@@ -449,6 +453,11 @@
           <button class="btn btn--ghost btn--wide" id="btn-diag-rerun" type="button">再診断</button>
           <button class="btn btn--ghost btn--wide" id="btn-diag-close" type="button">閉じる</button>
         </div>
+        <div class="diag-raw-box">
+          <p class="diag-raw-title">Raw Data</p>
+          <pre class="diag-raw" id="diag-raw">{}</pre>
+        </div>
+
       </div>
     </div>
 

@@ -1,0 +1,307 @@
+/* =================================================================
+   PWA UI — インストール誘導 / iOS手順 / 更新通知 / 縦画面固定
+   ================================================================= */
+
+/* ---------------- インストール誘導バナー（ホームカード内） ---------------- */
+.install-banner {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 18px;
+  border: 1px solid rgba(126, 190, 255, 0.45);
+  background:
+    linear-gradient(100deg, rgba(30, 136, 229, 0.34), rgba(30, 136, 229, 0.10)),
+    rgba(255, 255, 255, 0.04);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.install-banner.is-on {
+  display: flex;
+  animation: installIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.install-banner__icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(2, 26, 52, 0.45);
+}
+.install-banner__icon img { width: 100%; height: 100%; display: block; }
+
+.install-banner__body { flex: 1 1 auto; min-width: 0; }
+.install-banner__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+.install-banner__text {
+  margin: 2px 0 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.74);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.install-banner__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.install-banner__cta {
+  pointer-events: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 13px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(180deg, #4fa8f0, #1e88e5);
+  box-shadow: 0 5px 12px rgba(30, 136, 229, 0.45);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.install-banner__cta:active { transform: translateY(2px); }
+.install-banner__later {
+  pointer-events: auto;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 1px;
+  cursor: pointer;
+}
+
+@keyframes installIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------------- iOS 手順ガイド ---------------- */
+.ios-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: rgba(3, 12, 19, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s;
+}
+.ios-guide.is-on { opacity: 1; visibility: visible; pointer-events: auto; }
+
+.ios-guide__card {
+  width: 100%;
+  max-width: 360px;
+  padding: 20px 18px 16px;
+  border-radius: 24px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.35);
+  transform: translateY(16px);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ios-guide.is-on .ios-guide__card { transform: none; }
+
+.ios-guide__title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 900;
+  text-align: center;
+}
+.ios-guide__sub {
+  margin: 0 0 14px;
+  font-size: 11px;
+  color: #7d909c;
+  text-align: center;
+  line-height: 1.5;
+}
+.ios-guide__steps {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ios-guide__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(30, 136, 229, 0.07);
+}
+.ios-guide__num {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1e88e5;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.ios-guide__text { font-size: 12px; font-weight: 700; line-height: 1.45; color: #33475a; }
+.ios-guide__text b { color: #1565c0; }
+.ios-guide__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 2px;
+  border-radius: 5px;
+  background: #e8f2fb;
+  font-size: 12px;
+  vertical-align: -4px;
+}
+.ios-guide__note {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #fff8e1;
+  color: #8a6100;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+/* ---------------- 更新通知 ---------------- */
+.update-toast {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 26, 38, 0.92);
+  border: 1px solid rgba(126, 232, 250, 0.35);
+  color: #dff4ff;
+  font-size: 11.5px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -160%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
+  white-space: nowrap;
+}
+.update-toast.is-on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.update-toast__btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  color: #04222e;
+  background: #7ee8fa;
+  cursor: pointer;
+}
+.update-toast__close {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+/* ---------------- 縦画面固定（横向き時の案内） ---------------- */
+.rotate-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: linear-gradient(160deg, #0e2a3a, #06121b);
+  color: #fff;
+}
+.rotate-notice__phone {
+  width: 44px;
+  height: 72px;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  animation: rotateHint 2.2s ease-in-out infinite;
+}
+.rotate-notice__title { margin: 0; font-size: 15px; font-weight: 900; }
+.rotate-notice__text { margin: 0; font-size: 12px; color: rgba(255, 255, 255, 0.62); line-height: 1.6; }
+
+@keyframes rotateHint {
+  0%, 40% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}
+
+/* 横向き かつ 高さが小さい（スマホ横向き）時のみ表示 */
+@media (orientation: landscape) and (max-height: 560px) {
+  .rotate-notice { display: flex; }
+}
+
+/* ---------------- 設定パネル内のインストール行 ---------------- */
+.install-row {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(30, 136, 229, 0.22);
+  background: linear-gradient(100deg, rgba(30, 136, 229, 0.1), rgba(30, 136, 229, 0.04));
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.install-row__icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.install-row__icon img { width: 100%; height: 100%; display: block; }
+.install-row__body { flex: 1 1 auto; min-width: 0; }
+.install-row__label { display: block; font-size: 12.5px; font-weight: 900; }
+.install-row__hint { display: block; font-size: 10px; color: #7d909c; margin-top: 1px; }
+.install-row__chev { font-size: 12px; color: #9db1bd; }
+.install-row[data-state="installed"] {
+  border-color: rgba(22, 199, 154, 0.4);
+  background: rgba(22, 199, 154, 0.08);
+}
+.install-row[data-state="installed"] .install-row__chev { color: #16a97f; }
+
+/* セーフエリア対応（ノッチ / ホームインジケータ） */
+@supports (padding: env(safe-area-inset-top)) {
+  .hud__top { margin-top: 0; }
+}

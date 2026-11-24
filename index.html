@@ -3,20 +3,32 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-<title>Badminton Swipe Challenge</title>
+<title>Shuttle Smash</title>
 <meta name="description" content="スワイプで打ち分ける、スマホ向け本格バドミントン。ドロップ・クリア・ドライブ・スマッシュを使い分けてラリーを繋げよう。" />
-<meta name="theme-color" content="#0b1f33" />
+
+<!-- ===== PWA ===== -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1e88e5" />
+<meta name="color-scheme" content="dark light" />
 <meta name="mobile-web-app-capable" content="yes" />
+<meta name="application-name" content="Shuttle Smash" />
+
+<!-- ===== iOS (Safari / ホーム画面追加) ===== -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Badminton" />
-<link rel="manifest" href="manifest.webmanifest" />
+<meta name="apple-mobile-web-app-title" content="Shuttle Smash" />
+<meta name="format-detection" content="telephone=no" />
+
+<!-- ===== アイコン ===== -->
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-<link rel="icon" href="assets/icon-192.png" sizes="192x192" />
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+
+<!-- ===== スタイル ===== -->
 <link rel="stylesheet" href="css/base.css" />
 <link rel="stylesheet" href="css/screens.css" />
 <link rel="stylesheet" href="css/hud.css" />
+<link rel="stylesheet" href="css/pwa.css" />
 </head>
 <body>
 <div id="app">
@@ -27,17 +39,33 @@
     <!-- ============ ホーム ============ -->
     <section class="screen screen--home" data-screen="home" id="screen-home">
       <div class="home__top">
-        <p class="kicker">SPORTS ARCADE — v1.0.0</p>
+        <p class="kicker">SPORTS ARCADE — v1.0.1</p>
         <h1 class="hero">
           <span class="hero__small">Badminton</span>
-          <span class="hero__big">Swipe</span>
-          <span class="hero__big hero__big--accent">Challenge</span>
+          <span class="hero__big">Shuttle</span>
+          <span class="hero__big hero__big--accent">Smash</span>
         </h1>
         <p class="hero__tag">スワイプで打ち分ける、新感覚バドミントン</p>
       </div>
 
       <div class="home__bottom">
         <div class="home-card">
+
+          <!-- PWA インストール誘導（初回のみ / CSSで表示制御） -->
+          <div class="install-banner" id="install-banner" aria-hidden="true">
+            <span class="install-banner__icon">
+              <img src="assets/icon-192.png" alt="" width="44" height="44" />
+            </span>
+            <div class="install-banner__body">
+              <p class="install-banner__title">ホーム画面に追加</p>
+              <p class="install-banner__text" id="install-banner-text">アプリとして全画面で起動できます</p>
+            </div>
+            <div class="install-banner__actions">
+              <button class="install-banner__cta" id="btn-install" type="button" data-install-action="install">追加する</button>
+              <button class="install-banner__later" id="btn-install-later" type="button" data-install-action="later">あとで</button>
+            </div>
+          </div>
+
           <button class="btn btn--primary" id="btn-start">
             <span class="btn__main">スタート</span>
             <span class="btn__sub">TAP TO PLAY</span>
@@ -91,6 +119,18 @@
         <div class="field field--row">
           <span class="field__label">サウンド</span>
           <button class="toggle" id="set-sound">ON</button>
+        </div>
+
+        <div class="field">
+          <span class="field__label">アプリ</span>
+          <button class="install-row" id="btn-install-app" type="button" data-state="available">
+            <span class="install-row__icon"><img src="assets/icon-192.png" alt="" width="30" height="30" /></span>
+            <span class="install-row__body">
+              <span class="install-row__label" id="btn-install-app-label">アプリをインストール</span>
+              <span class="install-row__hint">ホーム画面に追加して全画面で起動</span>
+            </span>
+            <span class="install-row__chev">›</span>
+          </button>
         </div>
 
         <div class="field field--row">
@@ -244,6 +284,46 @@
       </div>
     </div>
 
+    <!-- ============ iOS インストール手順 ============ -->
+    <div class="ios-guide" id="ios-install-guide" aria-hidden="true" role="dialog" aria-label="ホーム画面への追加方法">
+      <div class="ios-guide__card">
+        <h2 class="ios-guide__title">ホーム画面に追加する</h2>
+        <p class="ios-guide__sub">Safari の共有メニューから3ステップで追加できます</p>
+        <ol class="ios-guide__steps">
+          <li class="ios-guide__step">
+            <span class="ios-guide__num">1</span>
+            <span class="ios-guide__text">画面下（または上部）の
+              <span class="ios-guide__glyph">□↑</span> 共有ボタンをタップ</span>
+          </li>
+          <li class="ios-guide__step">
+            <span class="ios-guide__num">2</span>
+            <span class="ios-guide__text">メニューを下にスクロールして
+              <b>「ホーム画面に追加」</b> を選択</span>
+          </li>
+          <li class="ios-guide__step">
+            <span class="ios-guide__num">3</span>
+            <span class="ios-guide__text">右上の <b>「追加」</b> をタップして完了</span>
+          </li>
+        </ol>
+        <p class="ios-guide__note">Android の Chrome をお使いの場合は、右上の ⋮ メニューから「アプリをインストール」を選べます。</p>
+        <button class="btn btn--ghost btn--wide" id="btn-ios-guide-close" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <!-- ============ 更新通知 ============ -->
+    <div class="update-toast" id="update-toast" role="status">
+      <span>新しいバージョンがあります</span>
+      <button class="update-toast__btn" id="btn-update-app" type="button">更新</button>
+      <button class="update-toast__close" id="btn-update-later" type="button" aria-label="閉じる">×</button>
+    </div>
+
+  </div>
+
+  <!-- 縦画面固定（横向き時の案内） -->
+  <div class="rotate-notice" id="rotate-notice" aria-hidden="true">
+    <div class="rotate-notice__phone"></div>
+    <p class="rotate-notice__title">縦画面でプレイしてください</p>
+    <p class="rotate-notice__text">このゲームはスマートフォンの縦画面に最適化されています。<br />端末を縦にしてください。</p>
   </div>
 </div>
 <script type="module" src="js/main.js"></script>

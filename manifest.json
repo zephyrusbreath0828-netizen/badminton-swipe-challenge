@@ -1,0 +1,74 @@
+{
+  "id": "/",
+  "name": "Shuttle Smash",
+  "short_name": "Shuttle Smash",
+  "description": "スワイプで打ち分けるスマートフォン向けバドミントン。ドロップ・クリア・ドライブ・スマッシュを使い分けてラリーを繋げよう。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "theme_color": "#1e88e5",
+  "background_color": "#ffffff",
+  "categories": ["games", "sports"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "assets/screenshot-home.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "ホーム画面 — スワイプでショットを選ぶ"
+    },
+    {
+      "src": "assets/screenshot-rally.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "ラリー中のプレー画面"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "すぐにプレイ",
+      "short_name": "プレイ",
+      "description": "チュートリアルを飛ばしてゲームを開始",
+      "url": "/?autostart=1",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { AudioManager } from './core/audio.js';
 import { Storage } from './core/storage.js';
 import { Hud } from './ui/hud.js';
 import { Screens } from './ui/screens.js';
+import { initPWA, registerServiceWorker } from './pwa/install.js';
 import { analyzeSwipe, simplifySamples } from './core/swipe.js';
 
 const app = document.getElementById('app');
@@ -151,14 +152,12 @@ if (params.has('autostart')) {
   screens.showResult({ score: 2480, maxRally: 17, smashes: 9, level: 25, returns: 61, winners: 3 });
 }
 
-// PWA
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => { /* オフライン非対応でも続行 */ });
-  });
-}
+// PWA: インストール誘導 + Service Worker 登録
+initPWA();
+registerServiceWorker();
 
 requestAnimationFrame(frame);
 
 // デバッグ用（開発時のみ）
 window.__BSC__ = { game, renderer, screens, storage, audio };
+window.__SS__ = window.__BSC__;

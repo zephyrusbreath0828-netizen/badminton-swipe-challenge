@@ -1,31 +1,56 @@
-# 🏸 Badminton Swipe Challenge
+# 🏸 Shuttle Smash
 
 スマートフォン向けの、スワイプ操作で遊ぶ本格バドミントンゲーム。
 ボタン連打ではなく、**画面上のスワイプの「長さ・方向・速度」**がそのままショットの種類・コース・威力に変換されます。
+v1.0.1 で **PWA 対応**（ホーム画面に追加・スタンドアロン起動・オフライン動作）を追加しました。
 
-- バージョン: **v1.0.0**
+- バージョン: **v1.0.1**（ゲーム内容は v1.0.0 と同一）
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
-- 対応: モバイルファースト（縦画面最適化） / PWA / オフライン起動
+- 対応: モバイルファースト（縦画面最適化） / PWA / オフライン起動 / Safe Area
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
 
 ---
 
 ## 目次
 
-1. [特徴](#特徴)
-2. [クイックスタート](#クイックスタート)
-3. [操作方法](#操作方法)
-4. [ショット一覧](#ショット一覧)
-5. [ゲームシステム](#ゲームシステム)
-6. [PWA / オフライン対応](#pwa--オフライン対応)
-7. [ディレクトリ構成](#ディレクトリ構成)
-8. [設計メモ（拡張方針）](#設計メモ拡張方針)
-9. [デプロイ](#デプロイ)
-10. [テスト](#テスト)
-11. [バランス調整](#バランス調整)
-12. [ロードマップ](#ロードマップ)
-13. [既知の制約](#既知の制約)
-14. [ライセンス](#ライセンス)
+1. [v1.0.1 の変更点（PWA対応）](#v101-の変更点pwa対応)
+2. [特徴](#特徴)
+3. [クイックスタート](#クイックスタート)
+4. [PWA（インストール / オフライン）](#pwaインストール--オフライン)
+5. [操作方法](#操作方法)
+6. [ショット一覧](#ショット一覧)
+7. [ゲームシステム](#ゲームシステム)
+8. [ディレクトリ構成](#ディレクトリ構成)
+9. [設計メモ（拡張方針）](#設計メモ拡張方針)
+10. [デプロイ](#デプロイ)
+11. [検証（テスト）](#検証テスト)
+12. [バランス調整](#バランス調整)
+13. [ロードマップ](#ロードマップ)
+14. [既知の制約](#既知の制約)
+15. [ライセンス](#ライセンス)
+
+---
+
+## v1.0.1 の変更点（PWA対応）
+
+ゲームの挙動・スコア・AI・操作感は **v1.0.0 から一切変更していません**。
+追加・変更したのは PWA 関連のみです。
+
+| 種別 | ファイル | 内容 |
+| --- | --- | --- |
+| 追加 | `manifest.json` | アプリ名・アイコン・standalone・縦固定・テーマカラー |
+| 追加 | `service-worker.js` | プリキャッシュ / オフライン応答 / 更新通知（旧 `sw.js` を置換） |
+| 追加 | `js/pwa/install.js` | インストール誘導（Android / iOS 別）・スタンドアロン判定・更新トースト |
+| 追加 | `css/pwa.css` | 誘導バナー・iOS手順・更新通知・横向き案内 |
+| 追加 | `assets/icon-192.png` `assets/icon-512.png` ほか | ラケット＋シャトルのアイコン一式（maskable / apple-touch 含む） |
+| 追加 | `assets/screenshot-*.png` | ストア風インストールダイアログ用スクリーンショット |
+| 追加 | `tools/pwa-check.mjs` | manifest / アイコン実寸 / SW キャッシュの自動検証 |
+| 変更 | `index.html` | PWAメタタグ、インストール誘導DOM、iOS手順、縦画面案内 |
+| 変更 | `js/main.js` | SW登録とインストール誘導の初期化（3行） |
+| 変更 | `js/config.js` | バージョン表記のみ（`1.0.0` → `1.0.1`） |
+| 変更 | `vercel.json` / `package.json` / `README.md` | ヘッダー設定・スクリプト・ドキュメント |
+
+> アプリ表示名は `Shuttle Smash` に統一しました（`manifest.json` の `name` / `short_name` と画面タイトル）。
 
 ---
 
@@ -38,15 +63,15 @@
 | 利き手システム | 右利き／左利きでフォア・バックが反転。コース解釈も変化 |
 | 完全自動移動 | 落下予測地点へ自動でフットワーク。プレイヤーはスイングに集中 |
 | 疑似3D描画 | Canvas 2D による透視投影。アニメ調キャラクター＋パーティクル演出 |
-| サウンド | WebAudio による完全合成（音声ファイル不要） |
+| サウンド | WebAudio による完全合成（音声ファイル不要 = 0KB） |
 | スコアアタック | 返球10点／スマッシュ30点。100点ごとにレベルアップしAIが強化 |
-| PWA | manifest + Service Worker でホーム画面追加・オフライン起動に対応 |
+| PWA | ホーム画面追加・スタンドアロン起動・オフライン動作・更新通知 |
 
 ---
 
 ## クイックスタート
 
-ビルド工程はありません。静的サーバーで配信するだけで動きます（ES Modules のため `file://` 直開きは不可）。
+ビルド工程はありません。静的サーバーで配信するだけで動きます（ES Modules + Service Worker のため `file://` 直開きは不可）。
 
 ```bash
 # 方法1: Python
@@ -60,13 +85,13 @@ npm run dev
 ```
 
 ブラウザで `http://localhost:3000` を開いてください。
-スマホ実機で確認する場合は、PCと同じWi-Fiに接続し `http://<PCのIP>:3000` へアクセスします。
+Service Worker は `https://` または `localhost` でのみ有効です（`http://192.168.x.x` では PWA 機能は動きません）。
 
 ### 動作確認用パラメータ
 
 | URL | 内容 |
 | --- | --- |
-| `/?autostart=1` | チュートリアルを飛ばして即プレイ |
+| `/?autostart=1` | チュートリアルを飛ばして即プレイ（PWAショートカットからも使用） |
 | `/?state=result` | リザルト画面の見た目確認（ダミーデータ） |
 
 ### キーボード操作（PC確認用）
@@ -77,6 +102,65 @@ npm run dev
 | `→` / `←` | ドライブ |
 | `↓` | スマッシュ（打点が高いときのみ） |
 | `Esc` | ポーズ |
+
+---
+
+## PWA（インストール / オフライン）
+
+### インストール方法
+
+| 環境 | 手順 |
+| --- | --- |
+| **Android (Chrome)** | 画面下部の誘導バナーで「インストール」→ 確認ダイアログで「インストール」。または ⋮ メニュー →「アプリをインストール」 |
+| **iPhone / iPad (Safari)** | 共有ボタン →「ホーム画面に追加」→「追加」。アプリ内の誘導バナーで手順を画像付きで確認できます |
+| **PC (Chrome / Edge)** | URLバー右のインストールアイコン、または設定画面の「アプリをインストール」 |
+
+初回アクセス時にホーム画面のカード内に誘導バナーを表示します（「あとで」で7日間非表示、設定画面からいつでも再実行可能）。
+スタンドアロン起動中はバナーを出しません。
+
+### スタンドアロン動作
+
+- `display: standalone` によりブラウザUI・URLバーなしで全画面起動
+- `orientation: portrait` で縦画面固定（Android）
+- `viewport-fit=cover` + `env(safe-area-inset-*)` でノッチ・ホームインジケータを回避
+- iOS は `apple-mobile-web-app-capable` / `status-bar-style: black-translucent` で全画面化
+- 端末を横向きにした場合は「縦画面でプレイしてください」の案内を表示
+
+### キャッシュ戦略
+
+| 対象 | 方式 |
+| --- | --- |
+| HTML（ナビゲーション） | ネットワーク優先 → 失敗時はキャッシュの `index.html`（完全オフライン起動） |
+| CSS / JS / アイコン / 画像 | キャッシュ優先 + バックグラウンド更新（次回起動で最新化） |
+| 外部オリジン | 介入しない（素通し） |
+| 旧バージョンのキャッシュ | `activate` で自動削除 |
+
+プリキャッシュ対象は **32ファイル**（HTML / CSS 4本 / JS 16本 / アイコン・画像 9点 / manifest）。
+すべて `tools/pwa-check.mjs` で実ファイルの存在と整合を検証しています。
+
+> **効果音について**: 本作の効果音は WebAudio でリアルタイム合成しており、音声ファイルを一切持ちません（0バイト）。
+> そのため「効果音のキャッシュ」は不要で、オフラインでもすべての効果音が鳴ります。
+
+### 更新フロー
+
+新しい `service-worker.js` をデプロイすると、次回起動時に画面上部へ「新しいバージョンがあります [更新]」を表示します。
+「更新」をタップすると `SKIP_WAITING` を送って即時切り替え＋リロードします。
+
+### PWA チェックリスト
+
+| 項目 | 状態 |
+| --- | --- |
+| `manifest.json`（name / short_name / start_url / scope / icons / theme / background） | ✅ |
+| アイコン 192×192 / 512×512（`any`） | ✅ 実寸検証済み |
+| maskable アイコン（192 / 512） | ✅ |
+| `apple-touch-icon` 180×180 | ✅ |
+| `display: standalone` + `orientation: portrait` | ✅ |
+| Service Worker 登録・スコープ | ✅ |
+| オフライン応答（ナビゲーション / 静的資産） | ✅ シミュレーション検証済み |
+| `theme_color` / `background_color` | ✅ `#1e88e5` / `#ffffff` |
+| インストール誘導（Android / iOS） | ✅ |
+| Safe Area / ノッチ対応 | ✅ |
+| HTTPS 配信（Vercel は標準対応） | ✅ |
 
 ---
 
@@ -193,67 +277,60 @@ npm run dev
 
 ---
 
-## PWA / オフライン対応
-
-- `manifest.webmanifest` … アプリ名・アイコン・縦画面固定・テーマカラー
-- `sw.js` … アプリシェルをプリキャッシュ。ナビゲーションはネットワーク優先、資産はキャッシュ優先
-- ホーム画面に追加するとスタンドアロン起動（ブラウザUIなし）
-
-> Service Worker は `https://` または `localhost` でのみ有効です。
-> アイコンは `assets/` に 192 / 512 / maskable / apple-touch を同梱しています。
-
----
-
 ## ディレクトリ構成
 
 ```
 .
-├── index.html               # 画面構造（ホーム/設定/ランキング/リザルト/HUD）
-├── manifest.webmanifest     # PWA マニフェスト
-├── sw.js                    # Service Worker（オフラインキャッシュ）
-├── vercel.json              # Vercel 用ヘッダー設定
-├── package.json             # 開発用スクリプトのみ（ビルドなし）
+├── index.html                # 画面構造（ホーム/設定/ランキング/リザルト/HUD/PWA誘導）
+├── manifest.json             # ★PWA マニフェスト
+├── service-worker.js         # ★PWA Service Worker（オフラインキャッシュ）
+├── vercel.json               # Vercel 用ヘッダー設定（SW非キャッシュ / manifest MIME）
+├── package.json              # 開発用スクリプトのみ（ビルドなし）
 ├── css/
-│   ├── base.css             # 変数・リセット・共通ボタン
-│   ├── screens.css          # 各画面・パネル・チュートリアル
-│   └── hud.css              # ゲーム中HUD・トースト・演出
+│   ├── base.css              # 変数・リセット・共通ボタン
+│   ├── screens.css           # 各画面・パネル・チュートリアル
+│   ├── hud.css               # ゲーム中HUD・トースト・演出
+│   └── pwa.css               # ★インストール誘導・iOS手順・更新通知・横向き案内
 ├── js/
-│   ├── main.js              # エントリ（レイアウト・入力・ループ配線）
-│   ├── config.js            # ★全パラメータ集約
-│   ├── game.js              # 状態機械・ラリー進行・スコア
-│   ├── core/                # DOM非依存ロジック（単体テスト可能）
-│   │   ├── math.js          # 補間・乱数・イージング
-│   │   ├── camera.js        # 疑似3D透視投影
-│   │   ├── swipe.js         # スワイプ解析
-│   │   ├── shot.js          # ショット判定（打点・利き手・コース）
-│   │   ├── shuttle.js       # シャトル物理（放物運動・ネット衝突）
-│   │   ├── player.js        # プレイヤー（自動移動・スイング）
-│   │   ├── ai.js            # AI（難易度・配球・レベル補正）
-│   │   ├── effects.js       # パーティクル・衝撃波
-│   │   ├── audio.js         # WebAudio 合成音
-│   │   └── storage.js       # 設定・ランキング永続化
+│   ├── main.js               # エントリ（レイアウト・入力・ループ配線・PWA初期化）
+│   ├── config.js             # ★全パラメータ集約
+│   ├── game.js               # 状態機械・ラリー進行・スコア
+│   ├── core/                 # DOM非依存ロジック（単体テスト可能）
+│   │   ├── math.js / camera.js / swipe.js / shot.js
+│   │   ├── shuttle.js / player.js / ai.js
+│   │   └── effects.js / audio.js / storage.js
 │   ├── render/
-│   │   ├── renderer.js      # アリーナ・コート・ネット・シャトル描画
-│   │   └── character.js     # アニメ調キャラクター描画
-│   └── ui/
-│       ├── hud.js           # スコア・ラリー・レベル・トースト
-│       ├── screens.js       # 画面遷移・設定反映・リザルト
-│       └── ranking.js       # ランキングリスト
-├── assets/                  # アイコン・favicon
+│   │   ├── renderer.js       # アリーナ・コート・ネット・シャトル描画
+│   │   └── character.js      # アニメ調キャラクター描画
+│   ├── ui/
+│   │   ├── hud.js / screens.js / ranking.js
+│   └── pwa/
+│       └── install.js        # ★インストール誘導 / スタンドアロン判定 / SW登録・更新
+├── assets/
+│   ├── icon-192.png          # ★192×192（any）
+│   ├── icon-512.png          # ★512×512（any）
+│   ├── icon-maskable-192.png # ★maskable
+│   ├── icon-maskable-512.png # ★maskable
+│   ├── apple-touch-icon.png  # ★180×180（iOS）
+│   ├── icon.svg / favicon.svg
+│   ├── screenshot-home.png   # ★インストールダイアログ用
+│   └── screenshot-rally.png  # ★インストールダイアログ用
 └── tools/
-    └── smoke-test.mjs       # ヘッドレス動作確認（Node）
+    ├── smoke-test.mjs        # ゲームロジックのヘッドレス検証
+    └── pwa-check.mjs         # ★PWA定義・キャッシュの検証
 ```
 
 ---
 
 ## 設計メモ（拡張方針）
 
-v1.1 以降の機能追加を想定し、**「DOMに触る層」と「触らない層」を分離**しています。
+**「DOMに触る層」と「触らない層」を分離**しています。
 
 - `js/core/*` … DOM を一切参照しない純粋ロジック。Node でそのままテスト可能
 - `js/game.js` … 状態機械のみ。UIへは `game.emit('score' | 'callout' | 'state' …)` で通知
 - `js/ui/*` … イベントを受け取って DOM を更新するだけ
 - `js/render/*` … `camera.project(x, y, z)` を通してのみ座標を扱う
+- `js/pwa/*` … PWA のUI/登録のみ。ゲーム状態には一切干渉しない
 
 ### 主な拡張ポイント
 
@@ -265,26 +342,13 @@ v1.1 以降の機能追加を想定し、**「DOMに触る層」と「触らな�
 | トーナメント（v1.3） | `game.js` の状態機械に `tournament` フェーズを追加 |
 | ダブルス（v2.0） | `core/player.js` を複数インスタンス化し、ヒット判定を拡張 |
 | オンライン対戦（v2.0） | `game.js` の入力（スワイプ解析結果）と状態をシリアライズして送受信 |
+| プッシュ通知 / バックグラウンド同期 | `service-worker.js` に `push` / `sync` ハンドラを追加 |
 
 ---
 
 ## デプロイ
 
-### GitHub Pages
-
-```bash
-git init
-git add .
-git commit -m "feat: Badminton Swipe Challenge v1.0.0"
-git branch -M main
-git remote add origin https://github.com/<user>/<repo>.git
-git push -u origin main
-```
-
-リポジトリの **Settings → Pages** で `Deploy from a branch` → `main` / `/ (root)` を選択。
-`.nojekyll` を同梱しているため、そのまま配信されます。
-
-### Vercel
+### Vercel（推奨）
 
 ```bash
 npm i -g vercel
@@ -293,28 +357,70 @@ vercel --prod # 本番
 ```
 
 フレームワークプリセットは **Other**、ビルドコマンドは空、出力ディレクトリも空のままでOK（完全な静的サイト）。
-`vercel.json` で `sw.js` のキャッシュ無効化とマニフェストの MIME を設定済みです。
+`vercel.json` で以下を設定済みです。
+
+- `service-worker.js` … `Cache-Control: max-age=0, must-revalidate` + `Service-Worker-Allowed: /`
+- `manifest.json` … `Content-Type: application/manifest+json`
+- `/assets/*` … 1年キャッシュ（immutable）、`/js/*` `/css/*` は都度検証
+
+> `start_url` は仕様どおり `/` です。Vercel のルート公開・カスタムドメイン・`*.vercel.app` いずれでも動作します。
+
+### GitHub Pages
+
+```bash
+git init && git add . && git commit -m "feat: Shuttle Smash v1.0.1 (PWA)"
+git branch -M main
+git remote add origin https://github.com/<user>/<repo>.git
+git push -u origin main
+```
+
+**Settings → Pages** で `Deploy from a branch` → `main` / `/ (root)` を選択（`.nojekyll` 同梱済み）。
+
+⚠️ GitHub Pages のプロジェクトページ（`https://<user>.github.io/<repo>/`）に置く場合、
+`manifest.json` の `start_url` / `scope` を `"/"` → `"/<repo>/"`（または相対の `"./"` と `"./"`）に変更してください。
+ルート公開（`<user>.github.io`）や Vercel では変更不要です。
 
 ---
 
-## テスト
-
-DOM を使わないヘッドレス検証を同梱しています（Canvas をスタブして実際にゲームループを回します）。
+## 検証（テスト）
 
 ```bash
-npm test
-# または
-node tools/smoke-test.mjs
+npm run verify   # ゲーム + PWA の両方を検証
+# 個別に
+npm test         # ゲームロジック（スワイプ判定 / ラリー / スコア / 難易度）
+npm run check:pwa # manifest・アイコン実寸・SWキャッシュ・オフライン応答
 ```
 
-検証内容:
+`tools/pwa-check.mjs` はブラウザ不要で以下を検証します。
 
-- スワイプ解析（長さ・方向・速度）
-- ショット判定（ドロップ/クリア/ドライブ/スマッシュ/ミスショット/利き手反転）
-- サーブ判定
-- デモ・プレイ中のゲームループが例外なく進行すること
-- 得点・ラリー・レベルアップ・リザルト到達
-- 難易度・利き手の組み合わせ
+1. manifest.json の必須項目（name / short_name / start_url / scope / display / orientation / theme / background）
+2. 宣言したアイコンの **実ファイル存在と実寸**（PNG ヘッダーを直接読取）
+3. スクリーンショットの実寸
+4. index.html の PWA メタタグ・誘導DOM
+5. Service Worker のプリキャッシュ対象が **すべて実在**すること
+6. Cache Storage をスタブして `install` / `activate` / `fetch` を実行し、
+   - オフライン時のナビゲーション応答
+   - キャッシュ済み JS の応答
+   - 未キャッシュ資源のフォールバック（504）
+   - クロスオリジンの素通し
+7. 旧構成（`sw.js` / `manifest.webmanifest`）の残骸がないこと
+
+> ⚠️ この検証は Node 上で Service Worker API を再現したものです。
+> **Chrome DevTools の Lighthouse（PWA）と実機インストールの最終確認は、HTTPS 環境（Vercel 等）で行ってください。**
+> 手順: Chrome DevTools → Lighthouse → Categories: Performance / Best Practices / Accessibility を選択 →
+> Device: Mobile → Analyze。Application タブの Manifest / Service Workers で登録状態とキャッシュを確認できます。
+> （Lighthouse 12 以降は PWA カテゴリ自体が廃止され、Installability は Application パネルで確認する形になっています）
+
+### 実機での確認項目
+
+| 項目 | 確認方法 |
+| --- | --- |
+| Android インストール | Chrome で開く → 誘導バナー or ⋮「アプリをインストール」 |
+| iPhone ホーム画面追加 | Safari で開く → 共有 → ホーム画面に追加 |
+| スタンドアロン起動 | ホーム画面のアイコンから起動し、URLバーが出ないこと |
+| オフライン起動 | 一度起動 → 機内モード → アイコンから起動し、プレイできること |
+| ノッチ回避 | HUD（スコア）がノッチに隠れないこと |
+| 縦画面固定 | 横向きにすると案内が出ること |
 
 ---
 
@@ -340,7 +446,8 @@ node tools/smoke-test.mjs
 
 | バージョン | 内容 |
 | --- | --- |
-| **v1.0** | シングルプレイ / スワイプ4種 / 打点・利き手 / PWA |
+| v1.0.0 | シングルプレイ / スワイプ4種 / 打点・利き手 |
+| **v1.0.1** | **PWA対応（インストール / スタンドアロン / オフライン / 更新通知）** |
 | v1.1 | 手動移動モード、キャラクター選択 |
 | v1.2 | 能力育成、ラケット収集 |
 | v1.3 | トーナメントモード |
@@ -351,9 +458,12 @@ node tools/smoke-test.mjs
 ## 既知の制約
 
 - コートは正式寸法を簡略化した疑似3D表示です（横方向は画面に収めるため圧縮しています）
-- BGM は未実装（効果音のみ）。`core/audio.js` に追加口を用意しています
+- BGM は未実装（効果音のみ・WebAudio合成）。`core/audio.js` に追加口を用意しています
 - ランキングは端末内 `localStorage` 保存（サーバー同期なし）
 - iOS Safari では初回タップまで無音です（WebAudio の自動再生制限。仕様どおりの挙動）
+- iOS は `beforeinstallprompt` 非対応のため、インストールは手動手順の案内になります
+- 横向きプレイは非対応（縦画面固定）
+- `http://<ローカルIP>` での確認では Service Worker が動きません（localhost か HTTPS を使用）
 
 ---
 

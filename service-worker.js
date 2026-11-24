@@ -8,7 +8,7 @@
    ・旧バージョンのキャッシュは activate で削除
    ================================================================= */
 
-const VERSION = '1.2.6';
+const VERSION = '1.2.8';
 const CACHE_NAME = `shuttle-smash-${VERSION}`;
 const LEGACY_PREFIXES = ['bsc-', 'shuttle-smash-'];
 

@@ -1,0 +1,731 @@
+/**
+ * PWA インストール UI（DOM 配線）
+ * ------------------------------------------------------------------
+ * v1.2.1: 原因診断を追加。
+ *  - コンソールログ（PWA Init / Manifest Loaded / SW Registered /
+ *    Install Prompt Ready / Install Button Clicked / Prompt Executed）
+ *  - beforeinstallprompt が無い場合はボタンを「インストール利用不可」で無効化し、
+ *    要件不足の理由を画面に表示
+ *  - 「PWA診断」ダイアログで Manifest / SW / Install / Display Mode を実測表示
+ */
+import { PwaInstaller, createStore, detectPlatform, isStandalone } from './installer.js';
+import { collectDiagnostics } from './diagnostics.js';
+
+const $ = (id) => document.getElementById(id);
+
+/** ログ接頭辞なしの素直な console.log（仕様どおりの文字列） */
+const log = (msg, ...rest) => {
+  try { console.log(msg, ...rest); } catch (e) { /* noop */ }
+};
+
+export const env = {
+  get standalone() { return isStandalone(window); },
+  get platform() { return detectPlatform(navigator); },
+  get isIOS() { return detectPlatform(navigator) === 'ios'; },
+  get isAndroid() { return detectPlatform(navigator) === 'android'; },
+  get isSafari() {
+    const ua = window.navigator.userAgent || '';
+    return /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/.test(ua);
+  },
+  get isMobile() { return this.platform !== 'desktop'; },
+};
+
+/* ------------------------------------------------------------------ */
+/* deferredPrompt（アプリ全体で共有する唯一の保持場所）                  */
+/*   index.html の <head> が window.deferredPrompt を用意する。          */
+/*   install.js はそれを読み書きするだけで、独自に二重保持しない。        */
+/* ------------------------------------------------------------------ */
+function getDeferredPrompt() {
+  const dp = window.deferredPrompt;
+  if (dp && typeof dp === 'object') return dp;
+  // 後方互換: v1.2.1/1.2.2 の早期捕捉変数
+  const legacy = window.__installPrompt;
+  return legacy && typeof legacy === 'object' ? legacy : null;
+}
+
+function setDeferredPrompt(ev) {
+  window.deferredPrompt = ev || null;
+  window.__installPrompt = ev || null;
+  if (!ev) {
+    const st = window.__promptState;
+    if (st) st.consumed = true;
+  }
+}
+
+function promptState() {
+  const st = window.__promptState || {};
+  return {
+    received: Number(st.received) || 0,
+    consumed: st.consumed === true,
+    receivedAt: Number(st.at) || null,
+  };
+}
+
+/** alert が使えない環境でも必ずユーザーに伝える */
+function alertSafe(msg) {
+  try {
+    if (typeof window.alert === 'function') {
+      window.alert(msg);
+      return;
+    }
+  } catch (e) { /* jsdom 等 */ }
+  notify(msg);
+}
+
+const GUIDE = {
+  ios: {
+    lead: 'iPhone / iPad をご利用の場合',
+    title: 'ホーム画面に追加',
+    steps: [
+      'Safari 下部（または上部）の <b>共有ボタン</b> をタップ',
+      'メニューの <b>「ホーム画面に追加」</b> を選択',
+      '<b>「追加」</b> をタップしてインストール完了',
+    ],
+    note: 'ホーム画面のアイコンから、URLバーなしの全画面で起動できます。',
+  },
+  android: {
+    lead: 'Android をご利用の場合',
+    title: 'アプリをインストール',
+    steps: [
+      'Chrome 右上の <b>⋮（メニュー）</b> をタップ',
+      '<b>「アプリをインストール」</b> または「ホーム画面に追加」を選択',
+      '<b>「インストール」</b> をタップして完了',
+    ],
+    note: 'このブラウザではインストールダイアログを直接開けませんでした。',
+  },
+  desktop: {
+    lead: 'パソコンをご利用の場合',
+    title: 'アプリをインストール',
+    steps: [
+      'アドレスバー右側の <b>インストールアイコン</b> をクリック',
+      '<b>「インストール」</b> を選択',
+      'デスクトップアプリとして起動できます',
+    ],
+    note: 'Chrome / Edge でご利用ください。',
+  },
+};
+
+export function initPWA() {
+  log('PWA Init');
+
+  // head のスクリプトが実行されない/ブロックされた環境でも壊れないように初期化する
+  if (window.deferredPrompt === undefined) window.deferredPrompt = null;
+  if (window.__installPrompt === undefined) window.__installPrompt = null;
+  if (!window.__promptState || typeof window.__promptState !== 'object') {
+    window.__promptState = { received: 0, at: 0, consumed: false };
+  }
+
+  const store = createStore(window.localStorage);
+  const installer = new PwaInstaller({ win: window, nav: navigator, store });
+
+  /* ---------- DOM ---------- */
+  const banner = $('install-banner');
+  const dialog = $('install-dialog');
+  const diag = $('screen-diagnostics');
+  const rowBtn = $('btn-install-app');
+  const rowLabel = $('btn-install-app-label');
+  const rowHint = $('btn-install-app-hint');
+  const installedNote = $('install-installed-note');
+  const errorBox = $('install-error');
+  const cta = $('btn-install');
+  const later = $('btn-install-later');
+  const bannerText = $('install-banner-text');
+
+  let bannerShown = false;
+  let lastDiag = null;
+
+  /* ---------- 早期捕捉されたイベントの取り込み ---------- */
+  function adoptEarlyPrompt() {
+    const early = getDeferredPrompt();
+    if (early && !installer.deferred) {
+      // installer 側にも同じイベントを渡す（prompt 実行は installer 経由）
+      installer.capturePrompt(early);
+      const st = window.__promptState;
+      if (st && !st.received) { st.received = 1; st.at = Date.now(); }
+      log('Install Prompt Ready', { source: 'deferredPrompt' });
+      return true;
+    }
+    return false;
+  }
+
+  // index.html の <head> が発火するカスタムイベント
+  window.addEventListener('ss:installprompt', () => {
+    if (adoptEarlyPrompt()) syncUI();
+    scheduleBanner();
+  });
+
+  // フォールバック（早期ハンドラが無い/遅れた場合もここで確実に保持する）
+  window.addEventListener('beforeinstallprompt', (e) => {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    setDeferredPrompt(e);
+    const st = window.__promptState;
+    if (st) {
+      if (!st.received) st.received = 1;
+      if (!st.at) st.at = Date.now();
+      st.consumed = false;
+    }
+    const had = installer.deferred;
+    installer.capturePrompt(e);
+    log(had ? 'Install Prompt Updated' : 'Install Prompt Ready', { source: 'deferredPrompt' });
+    syncUI();
+    scheduleBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    log('App Installed');
+    setDeferredPrompt(null);
+    installer.markInstalled();
+    hideBanner();
+    hideDialog();
+    syncUI();
+    notify('ホーム画面に追加しました');
+  });
+
+  /* ---------- 状態 → UI ---------- */
+  function syncUI() {
+    const snap = installer.snapshot();
+    const platform = snap.platform;
+    const deferred = getDeferredPrompt();
+
+    if (rowBtn && rowLabel) {
+      // 権威は window.deferredPrompt（イベントを実際に保持できているか）
+      const state = deferred && !snap.installed ? 'available'
+        : snap.installed ? 'installed'
+          : platform === 'ios' ? 'ios-manual'
+            : 'unavailable';
+
+      rowBtn.dataset.state = state;
+      rowBtn.hidden = false;
+
+      // 重要: ボタンは絶対に disabled にしない。
+      // disabled のボタンは click を発火せず「押しても無反応・ログも出ない」になる。
+      rowBtn.disabled = false;
+      rowBtn.removeAttribute('disabled');
+      if (state === 'available' || state === 'installed') rowBtn.removeAttribute('aria-disabled');
+      else rowBtn.setAttribute('aria-disabled', 'true');
+
+      switch (state) {
+        case 'installed':
+          rowLabel.textContent = 'アプリインストール済み';
+          if (rowHint) rowHint.textContent = 'ホーム画面のアイコンから起動できます';
+          break;
+        case 'available':
+          rowLabel.textContent = 'アプリをインストール';
+          if (rowHint) rowHint.textContent = 'ホーム画面に追加して全画面で起動';
+          break;
+        case 'ios-manual':
+          rowLabel.textContent = 'ホーム画面に追加（手順を見る）';
+          if (rowHint) rowHint.textContent = 'Safari の共有メニューから追加できます';
+          break;
+        default:
+          rowLabel.textContent = 'アプリをインストール';
+          if (rowHint) rowHint.textContent = 'タップすると原因を確認できます';
+      }
+
+      if (installedNote) installedNote.hidden = state !== 'installed';
+
+      // 要件不足の説明は「押したとき」に出す（勝手に出すと押せない印象になる）
+      if (errorBox && state !== 'unavailable') errorBox.hidden = true;
+    }
+
+    if (banner) {
+      if (snap.installed) hideBanner();
+      if (cta) cta.textContent = deferred ? 'インストール' : (platform === 'ios' ? '手順を見る' : '詳細');
+      if (bannerText) {
+        bannerText.textContent = deferred
+          ? 'アプリとして全画面で起動できます'
+          : (platform === 'ios' ? '共有メニューからホーム画面に追加できます' : 'インストールできない原因を確認');
+      }
+    }
+  }
+
+  /** 要件不足の理由を、実測値で埋めて表示 */
+  function renderErrorBox() {
+    if (!errorBox) return;
+    const reasons = [];
+    if (!(window.isSecureContext === true || window.location.protocol === 'https:'
+      || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      reasons.push('HTTPSではない');
+    }
+    if (!('serviceWorker' in navigator) || !window.navigator.serviceWorker.controller) {
+      reasons.push('Service Worker未登録（または未制御）');
+    }
+    if (!document.querySelector('link[rel="manifest"]')) reasons.push('Manifestが読み込まれていない');
+    if (installer.installed) reasons.push('既にインストール済み');
+    if (reasons.length === 0) reasons.push('ブラウザ未対応（beforeinstallprompt が発火していない）');
+
+    const detail = errorBox.querySelector('[data-role="detail"]');
+    if (detail) {
+      detail.innerHTML = reasons.map((r) => `<li>${r}</li>`).join('');
+    }
+  }
+
+  /* ---------- 手順ダイアログ ---------- */
+  function openDialog() {
+    if (!dialog) return;
+    const kind = installer.guideKind;
+    const conf = GUIDE[kind] || GUIDE.desktop;
+    const lead = $('install-dialog-lead');
+    const title = $('install-dialog-title');
+    const steps = $('install-dialog-steps');
+    const note = $('install-dialog-note');
+    if (lead) lead.textContent = conf.lead;
+    if (title) title.textContent = conf.title;
+    if (steps) {
+      steps.innerHTML = conf.steps
+        .map((t, i) => `<li class="install-dialog__step"><span class="install-dialog__num">${i + 1}</span><span class="install-dialog__text">${t}</span></li>`)
+        .join('');
+    }
+    if (note) note.textContent = conf.note;
+    dialog.classList.add('is-on');
+    dialog.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideDialog() {
+    if (!dialog) return;
+    dialog.classList.remove('is-on');
+    dialog.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ---------- バナー ---------- */
+  function showBanner() {
+    if (!banner || bannerShown || installer.installed) return;
+    bannerShown = true;
+    banner.classList.add('is-on');
+    banner.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideBanner(userDismissed = false) {
+    if (!banner) return;
+    banner.classList.remove('is-on');
+    banner.setAttribute('aria-hidden', 'true');
+    if (userDismissed) store.set({ dismissedAt: Date.now() });
+  }
+
+  function scheduleBanner() {
+    if (installer.installed) return;
+    const state = store.get();
+    const dismissedAt = state.dismissedAt || 0;
+    if (Date.now() - dismissedAt < (dismissedAt ? 7 * 24 * 60 * 60 * 1000 : 0)) return;
+    setTimeout(() => {
+      const home = $('screen-home');
+      if (home && home.classList.contains('is-active')) showBanner();
+    }, dismissedAt ? 1500 : 1200);
+  }
+
+  /* ---------- インストール実行 ---------- */
+  /**
+   * 要件（v1.2.4）:
+   *   1. console.log('Install Button Clicked')
+   *   2. window.deferredPrompt が無ければ alert('インストール準備ができていません')
+   *   3. console.log('Prompt Executed') → await window.deferredPrompt.prompt()
+   *   4. const result = await window.deferredPrompt.userChoice → console.log(result)
+   * コンソールから window.deferredPrompt.prompt() が動く環境では、この経路も必ず動く。
+   */
+  async function requestInstall({ fromBanner = false } = {}) {
+    // 要件: 押下ログは最優先（何も出ない＝ハンドラ未到達の切り分けになる）
+    log('Install Button Clicked');
+
+    adoptEarlyPrompt();
+
+    // 権威は window.deferredPrompt（installer 側の保持に依存しない）
+    const deferredPrompt = getDeferredPrompt();
+
+    if (installer.installed && !deferredPrompt) {
+      log('Already Installed');
+      notify('すでにホーム画面に追加されています');
+      syncUI();
+      return { outcome: 'installed' };
+    }
+
+    if (!deferredPrompt || typeof deferredPrompt.prompt !== 'function') {
+      log('Install Prompt Missing', { deferredPrompt: window.deferredPrompt, state: promptState() });
+      if (fromBanner) hideBanner();
+      // iOS は beforeinstallprompt 自体が無いので手順案内
+      if (installer.platform === 'ios') {
+        openDialog();
+        return { outcome: 'manual' };
+      }
+      alertSafe('インストール準備ができていません');
+      if (errorBox) {
+        errorBox.hidden = false;
+        renderErrorBox();
+        errorBox.classList.add('is-flash');
+        setTimeout(() => errorBox.classList.remove('is-flash'), 900);
+      }
+      return { outcome: 'unavailable' };
+    }
+
+    if (fromBanner) hideBanner();
+
+    // --- ここから prompt() ---
+    log('Prompt Executed');
+
+    let result = null;
+    try {
+      await deferredPrompt.prompt();
+      result = await deferredPrompt.userChoice;
+      log(result);                       // 要件: console.log(result)
+    } catch (e) {
+      log('Prompt Error', (e && e.message) || String(e));
+      result = { outcome: 'error', message: (e && e.message) || String(e) };
+    }
+
+    // prompt は 1 イベント 1 回。使用後は参照を解放する
+    setDeferredPrompt(null);
+    installer.deferred = null;
+
+    const outcome = (result && result.outcome) || 'dismissed';
+    log('Install Result', { outcome });
+
+    if (outcome === 'accepted') {
+      installer.markInstalled();
+      syncUI();
+      notify('インストールしました');
+      return { outcome: 'accepted' };
+    }
+
+    syncUI();
+    openDialog();
+    if (outcome !== 'dismissed') notify('インストールを開始できませんでした。手順をご確認ください');
+    return { outcome };
+  }
+
+  /* ---------- PWA 診断 ---------- */
+  /** 診断結果（部分でも可）を DOM に反映する */
+  function renderDiag(d) {
+    const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    const setOk = (id, ok) => { const el = $(id); if (el) el.dataset.ok = ok ? '1' : '0'; };
+    // 行のラベル(<span class="diag-row__label">)を壊さず値だけ更新する
+    const setRow = (id, v) => {
+      const el = $(id);
+      if (!el) return;
+      const val = el.querySelector('.diag-row__value');
+      if (val) val.textContent = v;
+      else el.textContent = v;
+    };
+    if (!d || !d.labels) return;
+
+    setRow('diag-installed', d.labels.installed);
+    setOk('diag-installed', !!(d.installed && d.installed.installed));
+    setRow('diag-prompt', d.labels.prompt);
+    setOk('diag-prompt', !!(d.prompt && d.prompt.available));
+    if (d.labels.deferredPrompt) {
+      setRow('diag-deferredprompt', d.labels.deferredPrompt);
+      setOk('diag-deferredprompt', !!(d.prompt && d.prompt.held));
+    }
+    setRow('diag-sw', d.labels.sw);
+    setOk('diag-sw', !!(d.sw && d.sw.registered));
+    setRow('diag-manifest', d.labels.manifest);
+    setOk('diag-manifest', !!(d.manifest && d.manifest.loaded));
+    setRow('diag-secure', d.labels.secure);
+    setOk('diag-secure', !!(d.secure && d.secure.secure));
+    setRow('diag-display', d.labels.display);
+    setOk('diag-display', !!(d.installed && (d.installed.displayMode === 'standalone' || d.installed.displayMode === 'fullscreen')));
+
+    if (d.sw) {
+      setText('diag-sw-detail', d.sw.registered
+        ? `scope: ${d.sw.scope || '-'} / ${d.sw.state || '?'}${d.sw.controller ? ' / controlled' : ' / not controlling yet'}`
+        : `${d.sw.error || '登録なし'}${d.sw.supported ? '' : '（serviceWorker 非対応）'}`);
+    }
+    if (d.manifest) {
+      setText('diag-manifest-detail', d.manifest.loaded
+        ? `${d.manifest.name || '(no name)'} / icons ${d.manifest.icons} / start_url ${d.manifest.startUrl || '-'}`
+        : `${d.manifest.error || '読み込めない'}${d.manifest.linked ? '' : '（<link rel="manifest"> 無し）'}`);
+    }
+    if (d.prompt) {
+      let text;
+      if (d.prompt.held) {
+        text = `window.deferredPrompt: 保持中（prompt(): ${d.prompt.hasPromptFn ? 'あり' : 'なし'}）`;
+      } else if (d.prompt.consumed) {
+        text = 'window.deferredPrompt: 使用済み（prompt() は1イベント1回）';
+      } else if (d.prompt.received > 0) {
+        text = 'window.deferredPrompt: null（イベントは受信したが保持されていない）';
+      } else if (env.isIOS) {
+        text = 'iOS は beforeinstallprompt 非対応（共有メニューから追加）';
+      } else {
+        text = 'beforeinstallprompt 未受信';
+      }
+      setText('diag-prompt-detail', `${text} / 受信 ${d.prompt.received} 回`);
+    }
+    if (d.secure) {
+      setText('diag-secure-detail', `${d.secure.label} / ${d.secure.protocol}//${d.secure.hostname || '-'}${d.secure.note ? ` / ${d.secure.note}` : ''}`);
+    }
+
+    const rawEl = $('diag-raw');
+    if (rawEl && d.raw) rawEl.textContent = JSON.stringify(d.raw, null, 2);
+
+    const reasonsEl = $('diag-reasons');
+    if (reasonsEl && Array.isArray(d.reasons)) {
+      reasonsEl.innerHTML = d.reasons.length
+        ? d.reasons.map((r) => `<li>${r}</li>`).join('')
+        : '<li class="is-ok">問題は見つかりませんでした。インストールできます。</li>';
+    }
+    setText('diag-time', new Date(d.at).toLocaleTimeString('ja-JP'));
+  }
+
+  function openDiag() {
+    if (!diag) return;
+    window.__DIAG_OPEN__ = true;
+    diag.hidden = false;
+    diag.removeAttribute('hidden');
+    diag.classList.add('is-on');
+    diag.setAttribute('aria-hidden', 'false');
+    diag.style.pointerEvents = 'auto';
+  }
+
+  /** 全項目を実測して表示する（1項目の失敗で他の項目を落とさない） */
+  async function runDiagnostics({ show = false } = {}) {
+    // v1.2.5: index.html のインライン診断エンジンを優先（モジュール非依存で必ず動く）
+    if (window.__PWA_DIAG__ && typeof window.__PWA_DIAG__.run === 'function') {
+      const res = await window.__PWA_DIAG__.run();
+      lastDiag = res;
+      if (show) openDiag();
+      return res;
+    }
+    // 押した瞬間に前回の "-" を消す（空欄のまま見せない）
+    document.querySelectorAll('.diag-row__value').forEach((el) => {
+      if (el.textContent === '-' || el.textContent === '') el.textContent = 'Checking…';
+    });
+
+    const st = promptState();
+    const ctx = {
+      promptAvailable: !!getDeferredPrompt(),
+      installed: installer.installed,
+      received: st.received,
+      consumed: st.consumed,
+      promptSource: getDeferredPrompt() ? 'deferredPrompt' : (st.consumed ? 'consumed' : 'none'),
+    };
+
+    let final = null;
+    try {
+      // onPartial: 取れた項目から順に描画（部分表示を保証）
+      final = await collectDiagnostics(ctx, (partial) => {
+        renderDiag(partial);
+        if (show) openDiag();
+      });
+    } catch (e) {
+      log('Diagnostics Failed', e && e.message);
+      const msg = `診断に失敗しました: ${e && e.message ? e.message : e}`;
+      document.querySelectorAll('.diag-row__value').forEach((el) => {
+        if (el.textContent === '-' || el.textContent === 'Checking…') el.textContent = 'Error';
+      });
+      const reasonsEl = $('diag-reasons');
+      if (reasonsEl) reasonsEl.innerHTML = `<li>${msg}</li>`;
+      const rawEl = $('diag-raw');
+      if (rawEl) rawEl.textContent = JSON.stringify({ error: String((e && e.stack) || e) }, null, 2);
+      if (show) openDiag();
+      return null;
+    }
+
+    lastDiag = final;
+    renderDiag(final);
+    if (show) openDiag();
+
+    // 要件: 診断時に console.log(diagnostics)
+    try { console.log(final); } catch (e) { /* noop */ }
+    log('PWA Diagnostics Result', final.raw);
+    return final;
+  }
+
+  /* ---------- イベント配線 ---------- */
+  /* インストールボタン: document の捕捉フェーズで受ける。
+     - ノード差し替え / stopPropagation / ラッパー要素の影響を受けない
+     - disabled にしないので click が必ず飛ぶ */
+  const INSTALL_SELECTOR = '#btn-install-app, .install-row';
+  let installBusy = false;
+
+  function onInstallActivate(e) {
+    const target = e.target && e.target.closest ? e.target.closest(INSTALL_SELECTOR) : null;
+    if (!target) return;
+    if (e.type === 'click') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (installBusy) return;
+    installBusy = true;
+    Promise.resolve()
+      .then(() => requestInstall())
+      .catch((err) => log('Install Handler Error', (err && err.message) || String(err)))
+      .finally(() => { setTimeout(() => { installBusy = false; }, 350); });
+  }
+
+  document.addEventListener('click', onInstallActivate, true);
+
+  // キーボード操作（Enter / Space）でも同じ経路
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = document.activeElement;
+    if (!el || !el.closest || !el.closest(INSTALL_SELECTOR)) return;
+    e.preventDefault();
+    onInstallActivate({ type: 'keydown', target: el, preventDefault() {}, stopPropagation() {} });
+  }, true);
+
+  const diagBtn = $('btn-pwa-diag');
+  if (diagBtn) {
+    diagBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openDiag();
+      runDiagnostics({ show: true }).catch(() => {});
+    });
+  }
+
+  if (diag) {
+    diag.addEventListener('click', (e) => { if (e.target === diag) closeDiag(); });
+    const close = $('btn-diag-close');
+    if (close) close.addEventListener('click', () => closeDiag());
+    const again = $('btn-diag-rerun');
+    if (again) again.addEventListener('click', () => runDiagnostics({ show: true }));
+  }
+
+  function closeDiag() {
+    // インラインエンジンに閉じる処理を委譲（hidden / pointer-events まで戻す）
+    if (window.__PWA_DIAG__ && typeof window.__PWA_DIAG__.close === 'function') {
+      window.__PWA_DIAG__.close();
+    }
+    window.__DIAG_OPEN__ = false;
+    if (!diag) return;
+    diag.classList.remove('is-on');
+    diag.setAttribute('aria-hidden', 'true');
+    diag.style.pointerEvents = 'none';
+    diag.hidden = true;
+    diag.setAttribute('hidden', '');
+  }
+
+  if (banner) {
+    banner.addEventListener('click', (e) => {
+      if (e.target.closest('[data-install-action]')) return;
+      requestInstall({ fromBanner: true });
+    });
+  }
+  if (cta) {
+    cta.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      requestInstall({ fromBanner: true });
+    });
+  }
+  if (later) {
+    later.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      hideBanner(true);
+    });
+  }
+
+  if (dialog) {
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) hideDialog(); });
+    const close = $('btn-install-dialog-close');
+    if (close) close.addEventListener('click', () => {
+      hideDialog();
+      store.set({ dismissedAt: Date.now() });
+    });
+  }
+
+  installer.onChange(() => syncUI());
+
+  const mq = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
+  if (mq && mq.addEventListener) {
+    mq.addEventListener('change', () => {
+      if (isStandalone(window)) {
+        installer.markInstalled();
+        hideBanner();
+        hideDialog();
+      }
+      syncUI();
+    });
+  }
+
+  const homeEl = $('screen-home');
+  if (homeEl && 'MutationObserver' in window) {
+    new MutationObserver(() => {
+      if (homeEl.classList.contains('is-active')) scheduleBanner();
+      else hideBanner();
+    }).observe(homeEl, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  adoptEarlyPrompt();
+  syncUI();
+  scheduleBanner();
+
+  // 起動時の自動診断は行わない（v1.2.6）。
+  // 診断は Settings の「PWA診断」を押したときだけ実行する。
+  closeDiag();
+
+  window.__installer = installer;
+  return { installer, requestInstall, openDialog, runDiagnostics, syncUI, getDiagnostics: () => lastDiag };
+}
+
+/* ------------------------------------------------------------------ */
+/* Service Worker 登録 + 更新通知                                       */
+/* ------------------------------------------------------------------ */
+export function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    log('SW Not Supported');
+    return null;
+  }
+  if (!/^https?:$/.test(window.location.protocol)) {
+    log('SW Skipped', { protocol: window.location.protocol });
+    return null;
+  }
+
+  const onLoad = () => {
+    window.navigator.serviceWorker
+      .register('./service-worker.js', { scope: './' })
+      .then((reg) => {
+        log('SW Registered', { scope: reg.scope });
+        reg.addEventListener('updatefound', () => {
+          const worker = reg.installing;
+          if (!worker) return;
+          worker.addEventListener('statechange', () => {
+            if (worker.state === 'installed' && window.navigator.serviceWorker.controller) {
+              showUpdateToast(reg);
+            }
+          });
+        });
+        setInterval(() => reg.update().catch(() => {}), 6 * 60 * 60 * 1000);
+      })
+      .catch((err) => {
+        log('SW Registration Failed', err && err.message);
+      });
+  };
+
+  if (document.readyState === 'complete') onLoad();
+  else window.addEventListener('load', onLoad);
+
+  let reloaded = false;
+  window.navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    reloaded = true;
+    if (window.__SS_UPDATE_REQUESTED__) window.location.reload();
+  });
+
+  return true;
+}
+
+function showUpdateToast(reg) {
+  const host = document.getElementById('update-toast');
+  if (!host) return;
+  host.classList.add('is-on');
+  const btn = document.getElementById('btn-update-app');
+  if (btn) {
+    btn.onclick = () => {
+      window.__SS_UPDATE_REQUESTED__ = true;
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      else window.location.reload();
+    };
+  }
+  const close = document.getElementById('btn-update-later');
+  if (close) close.onclick = () => host.classList.remove('is-on');
+}
+
+function notify(text) {
+  const host = document.getElementById('toasts');
+  if (!host) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = text;
+  host.appendChild(el);
+  setTimeout(() => el.remove(), 2400);
+}

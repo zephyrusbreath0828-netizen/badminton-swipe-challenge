@@ -3,7 +3,7 @@
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
 v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で PWA診断が全項目「-」になる不具合を修正。v1.2.3 で `deferredPrompt` の保持を修正。v1.2.4 で **設定画面のインストールボタンが無反応になる不具合**を修正しました。
 
-- バージョン: **v1.2.5**
+- バージョン: **v1.2.8**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,58 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA
 
 
 ---
+
+## v1.2.8 の変更点（Training / Character が反応しない）
+
+### 原因
+
+ホームの4導線は `click` だけで配線されていました。実機（タッチ）では
+
+- `pointerdown` の後に `app.setPointerCapture()` が走る
+- 指がわずかに動くとスクロール判定になる
+
+のいずれかで **`click` が発火しない**ことがあり、ハンドラに到達しませんでした。Play / Settings が動いて見えたのは、押下位置や指の動きの差でたまたま `click` が成立していたためです。
+
+### 修正
+
+- ホーム導線を **`click` + `pointerup`（touch）+ `touchend`** の3経路で受ける（`screens.js` の `act()`）
+- 400ms のガードで二重発火を防止
+- ボタンに `touch-action: manipulation`（ダブルタップズーム・スクロール判定の抑止）
+- ハンドラ内の例外を `console.error` で握りつぶさず出力
+
+### Training 画面（新規）
+
+- **Practice Rally** モード（AIは弱いショットのみ返球／ミスしてもゲームオーバーなし）
+- Best Rally / Plays を表示
+- プレイ中は右上に **RALLY カウンタ**（`game.on('rally')` の実測値）
+- 「ホームに戻る」でホームへ。終了は HUD の「トレーニングを終了」
+
+### Character 画面
+
+- Player Level / Experience / Available Points
+- Speed / Stamina / Shot Accuracy / Smash Power（日本語＋英語表記）
+- 各能力の「＋」で 能力+1・ポイント-1 → `localStorage`（`bsc.v1`.profile）へ即保存
+
+### コンソール
+
+`Training initialized` / `Character initialized`（起動時）、`Training button clicked` / `Character button clicked`（押下時）
+
+## v1.2.7 の変更点（デバッグ機能を一般ユーザーから隠す）
+
+PWA診断は開発者向け機能のため、設定画面から通常表示を外しました。**アプリタイトル（Shuttle Smash のロゴ）を5回連続タップ**した時だけ「開発者メニュー」が現れます。
+
+- 通常ユーザーのホームは **Play / Character / Training / Settings** のみ
+- 設定画面に PWA診断の行は出ない（開発者メニュー内に移動）
+- 5回タップ（各タップ間隔 1.5 秒以内）で解放。`localStorage` の `shuttleSmash.dev` に記憶
+- 開発者メニュー内の「開発者モードを無効化」でいつでも元に戻せる
+- タイトルは `.no-swipe` なので、タップがスワイプ入力として扱われない
+
+```js
+// index.html（インライン / モジュール非依存）
+var DEV_KEY = 'shuttleSmash.dev';
+var DEV_TAP_GAP = 1500;
+// タイトルを5回タップ → dev-section を表示
+```
 
 ## v1.2.5 の変更点（診断が「-」のまま／インストール済み表示）
 
@@ -595,6 +647,9 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.2.8** | **Training/Character 無反応の修正（クリック以外の入力経路）/ Training画面 / 育成の英語表記** |
+| **v1.2.7** | **開発者メニューを5連打で解禁 / 設定からPWA診断を隠す** |
+| **v1.2.6** | **診断モーダルの自動表示を廃止（ホーム→Play優先）** |
 | **v1.2.5** | **診断をインライン化（モジュール非依存）/ Installed・Standalone・Unavailable (Installed) 表示** |
 | **v1.2.4** | **インストールボタン無反応の修正（disabled廃止＋委譲リスナー）/ 押下ログ / 診断の実測表示** |
 | **v1.2.3** | **deferredPrompt をアプリ全体で保持 / prompt() 実行フロー / 診断に deferredPrompt 行を追加** |

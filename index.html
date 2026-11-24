@@ -68,12 +68,16 @@ window.addEventListener('appinstalled', function () {
   <canvas id="stage" aria-label="バドミントンコート"></canvas>
 
   <div id="ui">
+    <div class="training-counter" id="training-counter" hidden aria-hidden="true">
+      <span class="training-counter__label">RALLY</span>
+      <strong class="training-counter__num" id="training-rally-now">0</strong>
+    </div>
 
     <!-- ============ ホーム ============ -->
     <section class="screen screen--home" data-screen="home" id="screen-home">
       <div class="home__top">
-        <p class="kicker">SPORTS ARCADE — v1.2.1</p>
-        <h1 class="hero">
+        <p class="kicker">SPORTS ARCADE — v1.2.8</p>
+        <h1 class="hero no-swipe" id="app-title">
           <span class="hero__small">Badminton</span>
           <span class="hero__big">Shuttle</span>
           <span class="hero__big hero__big--accent">Smash</span>
@@ -152,11 +156,12 @@ window.addEventListener('appinstalled', function () {
             <span class="char-level__max">/ 50</span>
           </div>
           <div class="char-exp">
+            <span class="char-exp__label">Experience</span>
             <div class="char-exp__bar"><i id="char-exp-fill"></i></div>
             <span class="char-exp__text" id="char-exp-text">0 / 40</span>
           </div>
           <div class="char-points">
-            <span>所持ポイント</span>
+            <span>Available Points</span>
             <strong id="char-points">0</strong>
             <small>pt</small>
           </div>
@@ -172,6 +177,46 @@ window.addEventListener('appinstalled', function () {
         <p class="char-footnote">＋をタップすると 1ポイント消費して能力が +1 されます（最大100）。</p>
 
         <button class="btn btn--ghost btn--wide" id="btn-character-back">ホームに戻る</button>
+      </div>
+    </section>
+
+    <!-- ============ 練習（Training） ============ -->
+    <section class="screen screen--panel" data-screen="training" id="screen-training">
+      <div class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">Training</h2>
+          <p class="panel__sub">練習 / PRACTICE RALLY</p>
+        </header>
+
+        <div class="field">
+          <span class="field__label">モード</span>
+          <button class="mode-card is-active" id="btn-training-mode" type="button" data-mode="practice">
+            <span class="mode-card__body">
+              <span class="mode-card__title">Practice Rally</span>
+              <span class="mode-card__desc">AIは弱いショットのみ返球。ミスしてもゲームオーバーになりません。</span>
+            </span>
+            <span class="mode-card__check">✓</span>
+          </button>
+        </div>
+
+        <div class="training-stats">
+          <div class="training-stat">
+            <span class="training-stat__label">Best Rally</span>
+            <strong class="training-stat__value" id="training-best-rally">0</strong>
+          </div>
+          <div class="training-stat">
+            <span class="training-stat__label">Plays</span>
+            <strong class="training-stat__value" id="training-plays">0</strong>
+          </div>
+        </div>
+
+        <p class="char-footnote">ラリー継続数はプレイ中に画面右上へ表示されます。終了は HUD の「トレーニングを終了」。</p>
+
+        <button class="btn btn--primary" id="btn-training-start" type="button">
+          <span class="btn__main">Start</span>
+          <span class="btn__sub">PRACTICE RALLY</span>
+        </button>
+        <button class="btn btn--ghost btn--wide" id="btn-training-back" type="button">ホームに戻る</button>
       </div>
     </section>
 
@@ -228,11 +273,19 @@ window.addEventListener('appinstalled', function () {
             <p class="install-error__hint">PWA診断を確認してください</p>
           </div>
 
-          <button class="link-btn" id="btn-pwa-diag" type="button">
-            <span class="link-btn__icon">🔍</span>
-            <span>PWA診断</span>
-            <span class="link-btn__chev">›</span>
-          </button>
+          <!-- 開発者メニュー（アプリタイトルを5回連続タップした時だけ表示） -->
+          <div class="dev-section" id="dev-section" hidden>
+            <p class="dev-section__title">開発者メニュー</p>
+            <button class="link-btn" id="btn-pwa-diag" type="button">
+              <span class="link-btn__icon">🔍</span>
+              <span>PWA診断</span>
+              <span class="link-btn__chev">›</span>
+            </button>
+            <button class="link-btn link-btn--muted" id="btn-dev-off" type="button">
+              <span class="link-btn__icon">✕</span>
+              <span>開発者モードを無効化</span>
+            </button>
+          </div>
         </div>
 
         <div class="field field--row">
@@ -919,6 +972,87 @@ window.addEventListener('appinstalled', function () {
       }
     }).observe(el, { attributes: true, attributeFilter: ['class'] });
   }
+
+
+  /* =================================================================
+     開発者モード（v1.2.7）
+     アプリタイトルを 5 回連続タップした時だけ設定画面に開発者メニューを出す。
+     通常ユーザーには PWA診断 / デバッグ項目を一切見せない。
+     ================================================================= */
+  var DEV_KEY = 'shuttleSmash.dev';
+  var DEV_TAP_GAP = 1500;   // これ以上間が空いたらカウントをリセット
+  var devTaps = 0;
+  var devLastTap = 0;
+
+  function devEnabled() {
+    return safe(function () { return window.localStorage.getItem(DEV_KEY) === '1'; }, false);
+  }
+
+  function applyDev() {
+    var sec = document.getElementById('dev-section');
+    if (!sec) return;
+    var on = devEnabled();
+    sec.hidden = !on;
+    if (on) sec.removeAttribute('hidden');
+    else sec.setAttribute('hidden', '');
+    if (document.documentElement && document.documentElement.dataset) {
+      document.documentElement.dataset.dev = on ? '1' : '0';
+    }
+  }
+
+  function setDev(on) {
+    try {
+      if (on) window.localStorage.setItem(DEV_KEY, '1');
+      else window.localStorage.removeItem(DEV_KEY);
+    } catch (e) { /* 保存不可でも表示だけ切り替える */ }
+    applyDev();
+  }
+
+  function devToast(msg) {
+    var host = document.getElementById('toasts');
+    if (!host) return;
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(function () { el.remove(); }, 2600);
+  }
+
+  function onTitleTap() {
+    var now = Date.now();
+    if (now - devLastTap > DEV_TAP_GAP) devTaps = 0;
+    devTaps += 1;
+    devLastTap = now;
+    if (devTaps < 5) return;
+    devTaps = 0;
+    var was = devEnabled();
+    setDev(true);
+    if (!was) {
+      try { console.log('Developer Mode Enabled'); } catch (e) {}
+      devToast('開発者モードを有効化しました');
+    }
+  }
+
+  (function bindDevMode() {
+    var title = document.getElementById('app-title');
+    if (title) {
+      title.addEventListener('click', function (e) {
+        // タイトルタップでスワイプ入力を始めない
+        if (e && e.stopPropagation) e.stopPropagation();
+        onTitleTap();
+      });
+    }
+    var off = document.getElementById('btn-dev-off');
+    if (off) {
+      off.addEventListener('click', function (e) {
+        if (e) { e.preventDefault(); }
+        setDev(false);
+        devTaps = 0;
+        devToast('開発者モードを無効化しました');
+      });
+    }
+    applyDev();
+  })();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { boot(); forceClosedAtBoot(); watchOverlay(); });

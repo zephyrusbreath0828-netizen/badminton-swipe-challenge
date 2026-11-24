@@ -114,6 +114,7 @@ console.log('\n[1] Android Chrome: beforeinstallprompt → ネイティブダイ
   await settle();
 
   check('ボタン押下で prompt() が呼ばれる', calls.prompt === 1, String(calls.prompt));
+  check('prompt() 後に deferredPrompt が解放される', win.deferredPrompt === null, String(win.deferredPrompt));
   check('インストール後は「アプリインストール済み」表示', label.textContent === 'アプリインストール済み', label.textContent);
   check('インストール後はボタンが無効化（実質非表示相当）', btn.getAttribute('aria-disabled') === 'true');
   check('インストール済み注記が表示される', win.document.getElementById('install-installed-note').hidden === false);
@@ -281,6 +282,66 @@ console.log('\n[6] セーブ（localStorage）');
 }
 
 /* ================================================================== */
+console.log('\n[6b] deferredPrompt（v1.2.3）');
+{
+  const { win, mod } = await makeEnv(UA.android);
+  const { ev, calls } = fakePromptEvent('accepted');
+
+  // head の早期ハンドラを再現せず、イベントだけ飛ばす（install.js 側で保持できるか）
+  const api = mod.initPWA();
+  check('起動直後の deferredPrompt は null', win.deferredPrompt === null, String(win.deferredPrompt));
+
+  const evt = new win.Event('beforeinstallprompt', { cancelable: true });
+  evt.prompt = ev.prompt;
+  Object.defineProperty(evt, 'userChoice', { value: Promise.resolve({ outcome: 'accepted' }), configurable: true });
+  win.dispatchEvent(evt);
+
+  check('beforeinstallprompt で window.deferredPrompt に保持される', win.deferredPrompt === evt,
+    typeof win.deferredPrompt);
+  check('イベントの preventDefault が呼ばれる', evt.defaultPrevented === true);
+  check('受信回数が記録される', (win.__promptState || {}).received === 1, JSON.stringify(win.__promptState));
+  check('保持後はボタンが有効', win.document.getElementById('btn-install-app').disabled === false);
+
+  // --- 診断が実態を反映するか ---
+  const d = await api.runDiagnostics({ show: true });
+  check('診断: deferredPrompt 保持中は Prompt Available', d.labels.prompt === 'Prompt Available', d.labels.prompt);
+  check('診断: Raw の deferredPrompt が true', d.raw.deferredPrompt === true, JSON.stringify(d.raw.deferredPrompt));
+  check('診断: 行に Available (held) が出る',
+    win.document.querySelector('#diag-deferredprompt .diag-row__value').textContent === 'Available (held)',
+    win.document.querySelector('#diag-deferredprompt .diag-row__value').textContent);
+
+  // --- ボタン押下 → prompt() → userChoice ---
+  win.document.getElementById('btn-install-app')
+    .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  check('保持したイベントで prompt() が呼ばれる', calls.prompt === 1, String(calls.prompt));
+  check('userChoice 後に deferredPrompt を手放す', win.deferredPrompt === null, String(win.deferredPrompt));
+  check('accepted ならインストール済みになる',
+    api.installer.installed === true && win.document.getElementById('btn-install-app-label').textContent === 'アプリインストール済み');
+
+  // 使用後の診断
+  const d2 = await api.runDiagnostics({ show: true });
+  check('診断: 使用後は Prompt Missing', d2.labels.prompt === 'Prompt Missing', d2.labels.prompt);
+  check('診断: 使用後も受信履歴は残る', d2.raw.promptReceived === 1, String(d2.raw.promptReceived));
+  check('診断: 使用後は Used (consumed)',
+    win.document.querySelector('#diag-deferredprompt .diag-row__value').textContent === 'Used (consumed)',
+    win.document.querySelector('#diag-deferredprompt .diag-row__value').textContent);
+}
+
+console.log('\n[6c] deferredPrompt が無い状態でボタンを押す');
+{
+  const { win, mod } = await makeEnv(UA.android);
+  let alerted = null;
+  win.alert = (m) => { alerted = m; };
+  mod.initPWA();
+
+  win.document.getElementById('btn-install-app')
+    .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await settle();
+  check('deferredPrompt が無ければ alert を出す', alerted === 'インストール準備ができていません', String(alerted));
+  check('要件不足の説明も表示される', win.document.getElementById('install-error').hidden === false);
+}
+
 console.log('\n[7] PWA 診断（実API → 画面表示）');
 {
   const { win } = await makeEnv(UA.android);
@@ -303,7 +364,7 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
 
   const d = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
   check('Installed ラベル', d.labels.installed === 'Not Installed', d.labels.installed);
-  check('beforeinstallprompt ラベル', d.labels.prompt === 'Not Available', d.labels.prompt);
+  check('beforeinstallprompt ラベル', d.labels.prompt === 'Prompt Missing', d.labels.prompt);
   check('SW は getRegistrations() 経由で Registered',
     d.labels.sw === 'Registered' && d.sw.api === 'getRegistrations', `${d.labels.sw}/${d.sw.api}`);
   check('Manifest ラベル Loaded', d.labels.manifest === 'Loaded', d.labels.manifest);
@@ -322,7 +383,7 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
   Object.defineProperty(win, 'isSecureContext', { value: true, configurable: true });
 
   const d1 = await diag.collectDiagnostics({ promptAvailable: true, promptSource: 'captured' });
-  check('prompt 捕捉時は Available', d1.labels.prompt === 'Available' && d1.raw.installPrompt === true, d1.labels.prompt);
+  check('prompt 捕捉時は Available', d1.labels.prompt === 'Prompt Available' && d1.raw.installPrompt === true, d1.labels.prompt);
 
   const { win: w2 } = await makeEnv(UA.android, { standalone: true });
   const d2 = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
@@ -332,7 +393,7 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
 
   /* ---- 劣化試験: どれか1つが失敗しても "-" を残さない ---- */
   const valuesOf = (w) => [...w.document.querySelectorAll('.diag-row__value')].map((e) => e.textContent);
-  const noDash = (vals) => vals.length === 6 && vals.every((v) => v && v !== '-' && v !== 'Checking…');
+  const noDash = (vals) => vals.length === 7 && vals.every((v) => v && v !== '-' && v !== 'Checking…');
   const rowOf = (w, id) => w.document.querySelector(`#${id} .diag-row__value`).textContent;
 
   // (a) Service Worker 非対応（jsdom 既定）
@@ -361,7 +422,7 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
   const api3 = mod3.initPWA();
   const d3 = await api3.runDiagnostics({ show: true });
   const rows = [...w3.document.querySelectorAll('.diag-row')];
-  check('診断行が6件ある（HTTPS含む）', rows.length === 6, String(rows.length));
+  check('診断行が7件ある（deferredPrompt含む）', rows.length === 7, String(rows.length));
   const labelsKept = rows.every((r) => {
     const l = r.querySelector('.diag-row__label');
     const v = r.querySelector('.diag-row__value');

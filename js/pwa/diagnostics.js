@@ -291,14 +291,38 @@ export async function checkManifest({ timeout = 4000 } = {}) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 5) beforeinstallprompt                                             */
+/* 5) beforeinstallprompt / deferredPrompt                            */
 /* ------------------------------------------------------------------ */
+/**
+ * 「イベントは発火したのに保持されていない」を検出できるよう、
+ *   - window.deferredPrompt が今も保持されているか（held）
+ *   - これまでに受信した回数（received）
+ *   - prompt() に使って消費したか（consumed）
+ * を実測して返す。ラベルは要件どおり Prompt Available / Prompt Missing。
+ */
 export function checkPrompt(ctx = {}) {
-  const available = ctx.promptAvailable === true;
+  const raw = safe(() => window.deferredPrompt, null);
+  const held = !!raw && typeof raw === 'object';
+  const state = safe(() => window.__promptState, null) || {};
+  const received = Math.max(
+    Number(state.received) || 0,
+    held ? 1 : 0,
+    ctx.received ? 1 : 0,
+  );
+  const consumed = state.consumed === true || ctx.consumed === true;
+  // 明示的に true が渡された場合も「利用可」とみなす（installer 側の保持）
+  const available = held || (ctx.promptAvailable === true && !consumed);
+
   return {
+    held,
+    received,
+    consumed,
     available,
-    source: ctx.promptSource || (available ? 'captured' : 'none'),
-    label: available ? 'Available' : 'Not Available',
+    hasPromptFn: held ? safe(() => typeof raw.prompt === 'function', false) : false,
+    receivedAt: Number(state.at) || null,
+    source: ctx.promptSource || (held ? 'deferredPrompt' : consumed ? 'consumed' : received ? 'lost' : 'none'),
+    label: available ? 'Prompt Available' : 'Prompt Missing',
+    deferredLabel: held ? 'Available (held)' : consumed ? 'Used (consumed)' : available ? 'Available' : 'null',
   };
 }
 
@@ -308,7 +332,8 @@ export function checkPrompt(ctx = {}) {
 function buildLabelSet(s) {
   const labels = {
     installed: s.installed.installed ? 'Installed' : 'Not Installed',
-    prompt: s.prompt.available ? 'Available' : 'Not Available',
+    prompt: s.prompt.available ? 'Prompt Available' : 'Prompt Missing',
+    deferredPrompt: s.prompt.deferredLabel,
     // 要件の表示例に合わせる（未取得は "Not Registered" / "Missing"）
     sw: s.sw ? (s.sw.registered ? 'Registered' : 'Not Registered') : 'Not Registered',
     manifest: s.manifest
@@ -331,6 +356,9 @@ function buildRaw(s) {
     manifest: s.manifest ? s.manifest.loaded === true : false,
     secure: s.secure.secure === true,
     installPrompt: s.prompt.available === true,
+    deferredPrompt: s.prompt.held === true,
+    promptReceived: s.prompt.received,
+    promptConsumed: s.prompt.consumed === true,
     installed: s.installed.installed === true,
     displayMode: s.installed.displayMode,
     details: {
@@ -346,6 +374,9 @@ function buildRaw(s) {
       manifestIcons: s.manifest ? s.manifest.icons : null,
       manifestError: s.manifest ? s.manifest.error : null,
       promptSource: s.prompt.source,
+      promptHeld: s.prompt.held,
+      promptHasFn: s.prompt.hasPromptFn,
+      promptReceivedAt: s.prompt.receivedAt,
       installedBy: s.installed.by,
       protocol: s.secure.protocol,
       hostname: s.secure.hostname,
@@ -368,7 +399,13 @@ function buildReasons(s) {
   }
   if (s.installed.installed) reasons.push(`既にインストール済み（${s.installed.by}）`);
   else if (!s.prompt.available) {
-    reasons.push('beforeinstallprompt 未発火（ブラウザ非対応、またはインストール条件を満たしていない）');
+    if (s.prompt.consumed) {
+      reasons.push('deferredPrompt は使用済み（prompt() は1イベントにつき1回だけです）');
+    } else if (s.prompt.received > 0) {
+      reasons.push('beforeinstallprompt は発火したが deferredPrompt に保持されていない（preventDefault 後に参照が失われている）');
+    } else {
+      reasons.push('beforeinstallprompt 未発火（ブラウザ非対応、またはインストール条件を満たしていない）');
+    }
   }
   return reasons;
 }

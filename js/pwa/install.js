@@ -30,6 +30,48 @@ export const env = {
   get isMobile() { return this.platform !== 'desktop'; },
 };
 
+/* ------------------------------------------------------------------ */
+/* deferredPrompt（アプリ全体で共有する唯一の保持場所）                  */
+/*   index.html の <head> が window.deferredPrompt を用意する。          */
+/*   install.js はそれを読み書きするだけで、独自に二重保持しない。        */
+/* ------------------------------------------------------------------ */
+function getDeferredPrompt() {
+  const dp = window.deferredPrompt;
+  if (dp && typeof dp === 'object') return dp;
+  // 後方互換: v1.2.1/1.2.2 の早期捕捉変数
+  const legacy = window.__installPrompt;
+  return legacy && typeof legacy === 'object' ? legacy : null;
+}
+
+function setDeferredPrompt(ev) {
+  window.deferredPrompt = ev || null;
+  window.__installPrompt = ev || null;
+  if (!ev) {
+    const st = window.__promptState;
+    if (st) st.consumed = true;
+  }
+}
+
+function promptState() {
+  const st = window.__promptState || {};
+  return {
+    received: Number(st.received) || 0,
+    consumed: st.consumed === true,
+    receivedAt: Number(st.at) || null,
+  };
+}
+
+/** alert が使えない環境でも必ずユーザーに伝える */
+function alertSafe(msg) {
+  try {
+    if (typeof window.alert === 'function') {
+      window.alert(msg);
+      return;
+    }
+  } catch (e) { /* jsdom 等 */ }
+  notify(msg);
+}
+
 const GUIDE = {
   ios: {
     lead: 'iPhone / iPad をご利用の場合',
@@ -66,6 +108,13 @@ const GUIDE = {
 export function initPWA() {
   log('PWA Init');
 
+  // head のスクリプトが実行されない/ブロックされた環境でも壊れないように初期化する
+  if (window.deferredPrompt === undefined) window.deferredPrompt = null;
+  if (window.__installPrompt === undefined) window.__installPrompt = null;
+  if (!window.__promptState || typeof window.__promptState !== 'object') {
+    window.__promptState = { received: 0, at: 0, consumed: false };
+  }
+
   const store = createStore(window.localStorage);
   const installer = new PwaInstaller({ win: window, nav: navigator, store });
 
@@ -87,11 +136,13 @@ export function initPWA() {
 
   /* ---------- 早期捕捉されたイベントの取り込み ---------- */
   function adoptEarlyPrompt() {
-    const early = window.__installPrompt;
-    if (early && !installer.canPrompt) {
+    const early = getDeferredPrompt();
+    if (early && !installer.deferred) {
+      // installer 側にも同じイベントを渡す（prompt 実行は installer 経由）
       installer.capturePrompt(early);
-      window.__installPrompt = null;
-      log('Install Prompt Ready', { source: 'early-capture' });
+      const st = window.__promptState;
+      if (st && !st.received) { st.received = 1; st.at = Date.now(); }
+      log('Install Prompt Ready', { source: 'deferredPrompt' });
       return true;
     }
     return false;
@@ -103,17 +154,26 @@ export function initPWA() {
     scheduleBanner();
   });
 
-  // フォールバック（早期ハンドラが無い/遅れた場合）
+  // フォールバック（早期ハンドラが無い/遅れた場合もここで確実に保持する）
   window.addEventListener('beforeinstallprompt', (e) => {
-    const had = installer.canPrompt;
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    setDeferredPrompt(e);
+    const st = window.__promptState;
+    if (st) {
+      if (!st.received) st.received = 1;
+      if (!st.at) st.at = Date.now();
+      st.consumed = false;
+    }
+    const had = installer.deferred;
     installer.capturePrompt(e);
-    if (!had) log('Install Prompt Ready', { source: 'late-listener' });
+    log(had ? 'Install Prompt Updated' : 'Install Prompt Ready', { source: 'deferredPrompt' });
     syncUI();
     scheduleBanner();
   });
 
   window.addEventListener('appinstalled', () => {
     log('App Installed');
+    setDeferredPrompt(null);
     installer.markInstalled();
     hideBanner();
     hideDialog();
@@ -256,54 +316,80 @@ export function initPWA() {
   }
 
   /* ---------- インストール実行 ---------- */
+  /**
+   * 要件（v1.2.3）:
+   *   deferredPrompt が無ければ alert('インストール準備ができていません') して終了。
+   *   あれば prompt() → userChoice を取得してログ出力。
+   */
   async function requestInstall({ fromBanner = false } = {}) {
-    log('Install Button Clicked', installer.snapshot());
+    log('Install Button Clicked', { ...installer.snapshot(), deferred: !!getDeferredPrompt() });
     adoptEarlyPrompt();
 
-    const snap = installer.snapshot();
-
-    if (snap.installed) {
+    if (installer.installed) {
       notify('すでにホーム画面に追加されています');
       syncUI();
       return { outcome: 'installed' };
     }
 
-    // 1) ネイティブプロンプト（Android Chrome / PC Chrome）
-    if (installer.canPrompt) {
+    // iOS はそもそも beforeinstallprompt が存在しない（既存の手順案内を維持）
+    if (installer.platform === 'ios' && !getDeferredPrompt()) {
       if (fromBanner) hideBanner();
-      log('Prompt Executed');
-      const res = await installer.prompt();
-      syncUI();
-      if (res.outcome === 'accepted') {
-        log('Install Result', { outcome: 'accepted' });
-        notify('インストールしました');
-      } else if (res.outcome === 'dismissed') {
-        log('Install Result', { outcome: 'dismissed' });
-        openDialog();
-      } else {
-        log('Install Result', { outcome: res.outcome });
-        openDialog();
-      }
-      return res;
+      openDialog();
+      return { outcome: 'manual' };
     }
 
-    // 2) プロンプト不可
-    log('Install Prompt Unavailable', snap);
-    if (fromBanner) hideBanner();
-    if (snap.platform === 'ios') {
-      openDialog();
-    } else {
-      // 要件不足の説明を出す（設定画面の説明ブロックを強調）
+    const deferredPrompt = getDeferredPrompt();
+
+    if (!deferredPrompt) {
+      log('Install Prompt Missing', promptState());
+      if (fromBanner) hideBanner();
+      alertSafe('インストール準備ができていません');
       if (errorBox) {
         errorBox.hidden = false;
         renderErrorBox();
         errorBox.classList.add('is-flash');
         setTimeout(() => errorBox.classList.remove('is-flash'), 900);
-        try { errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* noop */ }
       }
-      notify('インストールできません。PWA診断を確認してください');
+      return { outcome: 'unavailable' };
     }
-    return { outcome: 'unavailable' };
+
+    // --- ここから prompt() 実行 ---
+    if (fromBanner) hideBanner();
+    if (!installer.deferred) installer.capturePrompt(deferredPrompt);
+
+    log('Prompt Executed');
+    let result = null;
+    try {
+      await deferredPrompt.prompt();
+      result = await deferredPrompt.userChoice;
+      log(result);                      // 要件: console.log(result)
+    } catch (e) {
+      log('Prompt Error', e && e.message);
+      result = { outcome: 'error', message: (e && e.message) || String(e) };
+    } finally {
+      // prompt は 1 イベント 1 回だけ。参照を確実に手放す
+      setDeferredPrompt(null);
+      installer.deferred = null;
+    }
+
+    const outcome = (result && result.outcome) || 'dismissed';
+    log('Install Result', { outcome });
+
+    if (outcome === 'accepted') {
+      installer.markInstalled();
+      syncUI();
+      notify('インストールしました');
+      return { outcome: 'accepted' };
+    }
+
+    syncUI();
+    if (outcome === 'dismissed') {
+      openDialog();                     // もう一度促す代わりに手順を出す
+    } else {
+      openDialog();
+      notify('インストールを開始できませんでした。手順をご確認ください');
+    }
+    return { outcome };
   }
 
   /* ---------- PWA 診断 ---------- */
@@ -325,6 +411,10 @@ export function initPWA() {
     setOk('diag-installed', !!(d.installed && d.installed.installed));
     setRow('diag-prompt', d.labels.prompt);
     setOk('diag-prompt', !!(d.prompt && d.prompt.available));
+    if (d.labels.deferredPrompt) {
+      setRow('diag-deferredprompt', d.labels.deferredPrompt);
+      setOk('diag-deferredprompt', !!(d.prompt && d.prompt.held));
+    }
     setRow('diag-sw', d.labels.sw);
     setOk('diag-sw', !!(d.sw && d.sw.registered));
     setRow('diag-manifest', d.labels.manifest);
@@ -345,9 +435,19 @@ export function initPWA() {
         : `${d.manifest.error || '読み込めない'}${d.manifest.linked ? '' : '（<link rel="manifest"> 無し）'}`);
     }
     if (d.prompt) {
-      setText('diag-prompt-detail', d.prompt.available
-        ? `source: ${d.prompt.source}`
-        : (env.isIOS ? 'iOS は beforeinstallprompt 非対応（共有メニューから追加）' : 'beforeinstallprompt 未発火'));
+      let text;
+      if (d.prompt.held) {
+        text = `window.deferredPrompt: 保持中（prompt(): ${d.prompt.hasPromptFn ? 'あり' : 'なし'}）`;
+      } else if (d.prompt.consumed) {
+        text = 'window.deferredPrompt: 使用済み（prompt() は1イベント1回）';
+      } else if (d.prompt.received > 0) {
+        text = 'window.deferredPrompt: null（イベントは受信したが保持されていない）';
+      } else if (env.isIOS) {
+        text = 'iOS は beforeinstallprompt 非対応（共有メニューから追加）';
+      } else {
+        text = 'beforeinstallprompt 未受信';
+      }
+      setText('diag-prompt-detail', `${text} / 受信 ${d.prompt.received} 回`);
     }
     if (d.secure) {
       setText('diag-secure-detail', `${d.secure.label} / ${d.secure.protocol}//${d.secure.hostname || '-'}${d.secure.note ? ` / ${d.secure.note}` : ''}`);
@@ -378,10 +478,13 @@ export function initPWA() {
       if (el.textContent === '-' || el.textContent === '') el.textContent = 'Checking…';
     });
 
+    const st = promptState();
     const ctx = {
-      promptAvailable: installer.canPrompt,
+      promptAvailable: !!getDeferredPrompt(),
       installed: installer.installed,
-      promptSource: window.__installPrompt ? 'early-capture' : (installer.canPrompt ? 'captured' : 'none'),
+      received: st.received,
+      consumed: st.consumed,
+      promptSource: getDeferredPrompt() ? 'deferredPrompt' : (st.consumed ? 'consumed' : 'none'),
     };
 
     let final = null;

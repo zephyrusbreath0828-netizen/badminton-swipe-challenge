@@ -1,9 +1,9 @@
 # 🏸 Shuttle Smash
 
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
-v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で **PWA診断が全項目「-」になる不具合**を修正し、`Raw Data` 表示を追加しました。
+v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で PWA診断が全項目「-」になる不具合を修正。v1.2.3 で **`deferredPrompt` を保持できず `prompt()` を呼べない不具合**を修正しました。
 
-- バージョン: **v1.2.2**
+- バージョン: **v1.2.3**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,53 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA
 
 
 ---
+
+## v1.2.3 の変更点（deferredPrompt の保持）
+
+### 原因
+
+`beforeinstallprompt` は発火していたが、**イベントオブジェクトをアプリ全体で共有する変数に保持していなかった**ため、ボタン押下時に `prompt()` を呼べませんでした。Chrome の
+
+```
+Banner not shown: beforeinstallpromptevent.preventDefault() called.
+The page must call beforeinstallpromptevent.prompt()
+```
+
+は「`preventDefault()` したのに `prompt()` が呼ばれていない」という警告で、まさにこの状態を示しています。
+
+### 修正
+
+`index.html` の `<head>`（モジュール実行より前）で、唯一の保持場所を用意します。
+
+```javascript
+window.deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();          // Chrome 既定バナーを止め、自前UIで制御する
+  window.deferredPrompt = e;   // ← アプリ全体で共有（console からも確認可能）
+  window.__promptState.received += 1;
+  console.log('Install prompt available');
+});
+```
+
+`install.js` はこの変数だけを読み書きします（二重保持しない）。
+
+- ボタン押下時、`window.deferredPrompt` が無ければ `alert('インストール準備ができていません')` を出して終了
+- あれば `await deferredPrompt.prompt()` → `await deferredPrompt.userChoice` → `console.log(result)`
+- `prompt()` は **1イベントにつき1回**なので、実行後は参照を `null` に解放（`__promptState.consumed = true`）
+- `accepted` ならインストール済み表示、`dismissed` なら手順ダイアログ
+
+### 診断画面
+
+| 行 | 内容 |
+|---|---|
+| beforeinstallprompt | `Prompt Available` / `Prompt Missing`（`window.deferredPrompt` の実体で判定） |
+| deferredPrompt | `Available (held)` / `Used (consumed)` / `null` |
+| 詳細 | `window.deferredPrompt` の状態、`prompt()` 関数の有無、受信回数 |
+
+`Raw Data` にも `deferredPrompt` / `promptReceived` / `promptConsumed` を出力します。
+
+> `beforeinstallprompt` が発火しても `deferredPrompt` が null のままなら、診断は `Prompt Missing` ではなく理由リストに「発火したが保持されていない」と表示します（取りこぼしの検出用）。
 
 ## v1.2.2 の変更点（診断の全面作り直し）
 
@@ -475,6 +522,7 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.2.3** | **deferredPrompt をアプリ全体で保持 / prompt() 実行フロー / 診断に deferredPrompt 行を追加** |
 | **v1.2.2** | **診断が全項目「-」になる不具合を修正 / 実API取得（getRegistrations・isSecureContext・matchMedia）/ Raw Data / HTTPS行追加** |
 | v1.3 | トーナメントモード、ラケット収集 |
 | v2.0 | ダブルス、オンライン対戦、リプレイ機能 |

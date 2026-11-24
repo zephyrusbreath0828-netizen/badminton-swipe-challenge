@@ -36,17 +36,31 @@
      ここで必ず受け取り window.__installPrompt に保持する。
      ================================================================= -->
 <script>
-(function () {
-  window.__installPrompt = null;
-  window.addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault();
-    window.__installPrompt = e;
-    try { window.dispatchEvent(new CustomEvent('ss:installprompt')); } catch (err) {}
-  });
-  window.addEventListener('appinstalled', function () {
-    window.__installPrompt = null;
-  });
-})();
+/* ------------------------------------------------------------------
+   v1.2.3: deferredPrompt の唯一の保持場所
+   beforeinstallprompt はモジュール実行より前に発火し得るため、
+   ここで preventDefault() してイベントを握り、window.deferredPrompt に置く。
+   install.js 側はこの変数を参照する（二重保持しない）。
+   ------------------------------------------------------------------ */
+window.deferredPrompt = null;
+window.__promptState = { received: 0, at: 0, consumed: false };
+
+window.addEventListener('beforeinstallprompt', function (e) {
+  // これが無いと Chrome は既定バナーを出し、後から prompt() を呼べなくなる
+  if (typeof e.preventDefault === 'function') e.preventDefault();
+  window.deferredPrompt = e;          // ← アプリ全体で共有する deferredPrompt
+  window.__promptState.received += 1;
+  window.__promptState.at = Date.now();
+  window.__promptState.consumed = false;
+  try { console.log('Install prompt available'); } catch (err) {}
+  try { window.dispatchEvent(new CustomEvent('ss:installprompt')); } catch (err) {}
+});
+
+window.addEventListener('appinstalled', function () {
+  window.deferredPrompt = null;
+  window.__promptState.consumed = true;
+  try { console.log('App Installed'); } catch (err) {}
+});
 </script>
 </head>
 <body>
@@ -415,6 +429,10 @@
           </div>
           <div class="diag-row" id="diag-prompt" data-ok="0">
             <span class="diag-row__label">beforeinstallprompt</span>
+            <span class="diag-row__value">-</span>
+          </div>
+          <div class="diag-row" id="diag-deferredprompt" data-ok="0">
+            <span class="diag-row__label">deferredPrompt</span>
             <span class="diag-row__value">-</span>
           </div>
           <div class="diag-row" id="diag-sw" data-ok="0">

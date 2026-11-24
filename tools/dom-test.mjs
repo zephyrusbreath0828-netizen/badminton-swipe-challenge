@@ -145,6 +145,13 @@ console.log('\n[2] Android Chrome: プロンプトを閉じた場合（dismissed
     win.document.getElementById('install-dialog-lead').textContent);
   check('インストール済みにはしない',
     win.document.getElementById('btn-install-app-label').textContent !== 'アプリインストール済み');
+
+  const row = win.document.getElementById('btn-install-app');
+  const err = win.document.getElementById('install-error');
+  check('プロンプト消費後は「インストール利用不可」', win.document.getElementById('btn-install-app-label').textContent === 'インストール利用不可',
+    win.document.getElementById('btn-install-app-label').textContent);
+  check('利用不可時はボタンが無効', row.disabled === true);
+  check('要件不足の説明が表示される', err.hidden === false);
 }
 
 /* ================================================================== */
@@ -269,6 +276,60 @@ console.log('\n[6] セーブ（localStorage）');
   check('ポイントが復元される', restored.points === p.points, `${restored.points}/${p.points}`);
   check('能力値が復元される', restored.stats.speed === p.stats.speed, `${restored.stats.speed}/${p.stats.speed}`);
   check('設定・ランキングと共存する', typeof st2.settings.handedness === 'string');
+}
+
+/* ================================================================== */
+console.log('\n[7] PWA 診断（collectDiagnostics）');
+{
+  const { win } = await makeEnv(UA.android);
+  const diag = await import(`${path.join(ROOT, 'js/pwa/diagnostics.js')}?d=${Math.random()}`);
+
+  // manifest / SW をスタブ
+  const manifestJson = {
+    name: 'Shuttle Smash', short_name: 'Shuttle Smash', start_url: '/', display: 'standalone',
+    icons: [{ sizes: '192x192' }, { sizes: '512x512' }],
+  };
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => manifestJson });
+  Object.defineProperty(win.navigator, 'serviceWorker', {
+    value: {
+      getRegistration: async () => ({ scope: 'https://example.test/', active: { state: 'activated' } }),
+      controller: {},
+      addEventListener() {},
+    },
+    configurable: true,
+  });
+
+  const d = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
+  check('Installed ラベル', d.labels.installed === 'Not Installed', d.labels.installed);
+  check('beforeinstallprompt ラベル', d.labels.prompt === 'Not Available', d.labels.prompt);
+  check('Service Worker ラベル', d.labels.sw === 'Registered', d.labels.sw);
+  check('Manifest ラベル', d.labels.manifest === 'Loaded', d.labels.manifest);
+  check('Display Mode ラベル', ['Browser', 'Standalone'].includes(d.labels.display), d.labels.display);
+  check('Manifest の中身を読めている', d.manifest.icons === 2 && d.manifest.name === 'Shuttle Smash',
+    JSON.stringify(d.manifest));
+  check('原因リストに beforeinstallprompt 未発火が含まれる',
+    d.reasons.some((r) => r.includes('beforeinstallprompt')), d.reasons.join(' / '));
+
+  // standalone 判定
+  const { win: w2 } = await makeEnv(UA.android, { standalone: true });
+  const d2 = await diag.collectDiagnostics({ promptAvailable: false, installed: false });
+  check('standalone 時は Installed', d2.labels.installed === 'Installed', d2.labels.installed);
+  check('standalone 時は Display Mode = Standalone', d2.labels.display === 'Standalone', d2.labels.display);
+
+  // UI 側: 診断行のラベルが消えないこと
+  const { win: w3, mod: mod3 } = await makeEnv(UA.desktop);
+  const api3 = mod3.initPWA();
+  await api3.runDiagnostics({ show: true });
+  const rows = [...w3.document.querySelectorAll('.diag-row')];
+  check('診断行が5件ある', rows.length === 5, String(rows.length));
+  const labelsKept = rows.every((r) => {
+    const l = r.querySelector('.diag-row__label');
+    const v = r.querySelector('.diag-row__value');
+    return l && l.textContent.trim().length > 0 && v && v.textContent !== '-';
+  });
+  check('項目名と値の両方が表示される', labelsKept,
+    rows.map((r) => r.textContent.trim()).join(' | '));
+  check('診断パネルが開く', w3.document.getElementById('screen-diagnostics').classList.contains('is-on'));
 }
 
 console.log(`\n結果: ${failures === 0 ? `ALL PASS (${checks} checks)` : `${failures} FAILED / ${checks} checks`}\n`);

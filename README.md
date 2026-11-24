@@ -1,9 +1,9 @@
 # 🏸 Shuttle Smash
 
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
-v1.2.0 で **キャラクター育成システム**を追加し、PWA インストールボタンの不具合を修正しました。
+v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で **PWAインストール不具合の真因を修正＋診断機能**を追加しました。
 
-- バージョン: **v1.2.0**
+- バージョン: **v1.2.1**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -12,7 +12,8 @@ v1.2.0 で **キャラクター育成システム**を追加し、PWA インス�
 
 ## 目次
 
-1. [v1.2.0 の変更点](#v120-の変更点)
+1. [v1.2.1 の変更点（不具合修正）](#v121-の変更点不具合修正)
+2. [v1.2.0 の変更点](#v120-の変更点)
 2. [PWAインストール（修正内容）](#pwaインストール修正内容)
 3. [キャラクター育成](#キャラクター育成)
 4. [クイックスタート](#クイックスタート)
@@ -106,6 +107,102 @@ v1.2.0 で **キャラクター育成システム**を追加し、PWA インス�
 | Android Chrome（プロンプト不可・閉じた後） | インストール方法を見る | 手順ダイアログ（⋮ → アプリをインストール） |
 | iPhone / iPad Safari | ホーム画面に追加 | 手順ダイアログ（共有 → ホーム画面に追加 → 追加） |
 | すでにインストール済み | **アプリインストール済み**（ボタン非表示） | 押しても通知のみ |
+
+
+---
+
+## v1.2.1 の変更点（不具合修正）
+
+### 真因
+
+**設定画面のインストールボタンが無反応だった原因は、PWA の実装ではなく
+`js/main.js` の初期化順序の欠陥**でした。
+
+```
+TypeError: Cannot read properties of undefined (reading 'level')
+  at Screens.syncHomeProfile (js/ui/screens.js)
+  at new Screens (js/ui/screens.js)
+  at js/main.js
+```
+
+v1.2.0 で `Screens` に `profile`（育成データ）を渡す設計に変更した際、
+`main.js` 側で `PlayerProfile` の生成と受け渡しが漏れていました。
+その結果 `new Screens(...)` のコンストラクタで例外が発生し、
+**`main.js` のモジュール実行がその場で停止**。
+以降の行にある `initPWA()` / `registerServiceWorker()` / ゲームループがすべて未実行になっていました。
+
+そのため:
+
+- CSS の hover / active 演出は動く（CSSは独立）
+- ボタンの見た目は正常
+- しかし click ハンドラが一度も登録されていない（＝`initPWA()` 未実行）
+- ダイアログもエラーも出ない（JSが死んでいるため）
+
+という、報告どおりの症状になっていました。
+
+### 修正内容
+
+| 項目 | 内容 |
+| --- | --- |
+| 真因修正 | `main.js` で `PlayerProfile` を生成し `Screens` へ渡す。初期化後に `screens.applyAbilities()` を実行 |
+| 再発防止 | `tools/dom-test.mjs` を拡張し、**index.html を jsdom で起動して main.js を実行**、`window.__BSC__` が生成されること（＝モジュールが最後まで走ること）を検証 |
+| 診断機能 | 「PWA診断」を追加。Manifest / SW / Install / Display Mode / beforeinstallprompt を**実測値**で表示 |
+| ボタン制御 | `beforeinstallprompt` 取得時のみ「アプリをインストール」。未取得時は「**インストール利用不可**」で無効化し、要件不足の理由を画面に表示 |
+| ログ | `PWA Init` / `Manifest Loaded` / `SW Registered` / `Install Prompt Ready` / `Install Button Clicked` / `Prompt Executed` / `userChoice` |
+| 入力競合 | バナー・パネル・ダイアログ上でスワイプ用の `setPointerCapture` が走らないよう除外を追加 |
+
+### PWA診断で表示される項目
+
+| 項目 | 表示 |
+| --- | --- |
+| インストール状態 | `Installed` / `Not Installed` |
+| beforeinstallprompt | `Available` / `Not Available` |
+| Service Worker | `Registered` / `Not Registered`（scope・state・制御状態も表示） |
+| Manifest | `Loaded` / `Not Loaded`（name・icon数・start_url も表示） |
+| Display Mode | `Browser` / `Standalone` |
+| 判定 | 実際に当てはまる阻害要因を列挙 |
+
+設定画面 →「PWA診断」、または `?diag=1` 相当として `window.__installer.runDiagnostics()` からも実行できます。
+
+---
+
+## PWAが利用できない原因一覧
+
+インストールできないときは、まず**設定 → PWA診断**を開いてください。
+以下は診断で `Not Available` / `Not Registered` / `Not Loaded` になった場合の主な原因です。
+
+### 1. HTTPS で配信されていない
+
+- Service Worker は `https://` または `localhost` でのみ動作します。
+- `http://192.168.x.x:3000` のような**LAN内IPでは絶対に動きません**（診断: SW `Not Registered`）。
+- Vercel / GitHub Pages / Netlify は標準で HTTPS なので問題ありません。
+
+### 2. Service Worker が未登録・未制御
+
+- 初回訪問直後は登録処理中で、**リロードするまで `controller` が付かない**ことがあります。
+- `service-worker.js` のパス誤り、`scope` 外への配置、登録時の例外（診断にエラー文字列が出ます）。
+- 開発中に SW を変更した場合、旧 SW が残って更新されないことがあります → DevTools → Application → Service Workers → **Update / Unregister**。
+
+### 3. Manifest が読めていない・内容不備
+
+- `manifest.json` への 404、`Content-Type` が `application/json` 以外（Vercel 用に `vercel.json` で `application/manifest+json` を設定済み）。
+- `name` / `short_name` / `start_url` / `display` / **192×192 と 512×512 のアイコン**が欠けている。
+- `start_url` が現在のスコープ外（例: `/repo/` 配信なのに `start_url: "/"`）。
+
+### 4. ブラウザが未対応 / インストール条件を満たしていない
+
+- **iPhone / iPad の Safari は `beforeinstallprompt` を実装していません**（仕様）。共有メニューから手動追加のみ。
+- Firefox・iOS 上の Chrome など、Chromium 系以外はプロンプト非対応。
+- 一度インストールダイアログを**閉じた（dismissed）**場合、同じページ読み込みでは再発火しません（リロードで復帰）。
+- すでにインストール済み、または同一オリジンで別途インストール済み。
+
+### 5. その他
+
+- シークレットモード / プライベートブラウズではインストールできません。
+- 企業ポリシーや管理されたブラウザでインストールが無効化されている。
+- ストレージが満杯、またはサイトデータがブロックされている。
+
+> 診断画面の「判定」欄には、上記のうち**実際に該当したものだけ**が表示されます。
 
 ---
 
@@ -307,7 +404,7 @@ npm run verify
 | スクリプト | 検証内容 |
 | --- | --- |
 | `smoke-test.mjs` | スワイプ解析・4ショット判定・利き手反転・サーブ・ゲームループ・難易度 |
-| `dom-test.mjs` | インストールボタンの prompt() 呼び出し / userChoice 処理 / インストール済み表示 / iOS手順ダイアログ / 育成の報酬計算・レベルアップ・上限・セーブ復元・倍率が仕様値どおりか |
+| `dom-test.mjs` | **index.html を実際に起動して main.js が最後まで実行されること** / インストールボタンの prompt() 呼び出し / userChoice 処理 / インストール済み表示 / 利用不可時の無効化と理由表示 / iOS手順ダイアログ / PWA診断の各ステータス / 育成の報酬計算・レベルアップ・上限・セーブ復元・倍率 |
 | `pwa-check.mjs` | manifest 必須項目・アイコン実寸・プリキャッシュ全件の実在・オフライン応答 |
 
 > ℹ️ `dom-test.mjs` の実行には `jsdom` が必要です（`npm i -D jsdom`）。開発時のみの依存で、配布物には含まれません。
@@ -332,7 +429,8 @@ npm run verify
 | --- | --- |
 | v1.0.0 | シングルプレイ / スワイプ4種 / 打点・利き手 |
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
-| **v1.2.0** | **キャラクター育成（4能力・レベル・報酬） / 練習モード / インストール不具合修正** |
+| v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
+| **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
 | v1.3 | トーナメントモード、ラケット収集 |
 | v2.0 | ダブルス、オンライン対戦、リプレイ機能 |
 

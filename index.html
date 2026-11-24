@@ -58,7 +58,7 @@
     <!-- ============ ホーム ============ -->
     <section class="screen screen--home" data-screen="home" id="screen-home">
       <div class="home__top">
-        <p class="kicker">SPORTS ARCADE — v1.2.0</p>
+        <p class="kicker">SPORTS ARCADE — v1.2.1</p>
         <h1 class="hero">
           <span class="hero__small">Badminton</span>
           <span class="hero__big">Shuttle</span>
@@ -205,6 +205,20 @@
           <p class="install-installed-note" id="install-installed-note" hidden>
             アプリインストール済み — ホーム画面のアイコンからURLバーなしで起動できます。
           </p>
+
+          <!-- 要件不足の説明（beforeinstallprompt が無いときだけ表示） -->
+          <div class="install-error" id="install-error" hidden>
+            <p class="install-error__title">インストール要件を満たしていません</p>
+            <p class="install-error__label">原因:</p>
+            <ul class="install-error__reasons" data-role="detail"></ul>
+            <p class="install-error__hint">PWA診断を確認してください</p>
+          </div>
+
+          <button class="link-btn" id="btn-pwa-diag" type="button">
+            <span class="link-btn__icon">🔍</span>
+            <span>PWA診断</span>
+            <span class="link-btn__chev">›</span>
+          </button>
         </div>
 
         <div class="field field--row">
@@ -383,6 +397,58 @@
         <ol class="install-dialog__steps" id="install-dialog-steps"></ol>
         <p class="install-dialog__note" id="install-dialog-note"></p>
         <button class="btn btn--ghost btn--wide" id="btn-install-dialog-close" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <!-- ============ PWA 診断 ============ -->
+    <div class="diag-overlay" id="screen-diagnostics" aria-hidden="true">
+      <div class="panel panel--diag">
+        <header class="panel__head">
+          <h2 class="panel__title">PWA診断</h2>
+          <p class="panel__sub">DIAGNOSTICS</p>
+        </header>
+
+        <div class="diag-list">
+          <div class="diag-row" id="diag-installed" data-ok="0">
+            <span class="diag-row__label">インストール状態</span>
+            <span class="diag-row__value">-</span>
+          </div>
+          <div class="diag-row" id="diag-prompt" data-ok="0">
+            <span class="diag-row__label">beforeinstallprompt</span>
+            <span class="diag-row__value">-</span>
+          </div>
+          <div class="diag-row" id="diag-sw" data-ok="0">
+            <span class="diag-row__label">Service Worker</span>
+            <span class="diag-row__value">-</span>
+          </div>
+          <div class="diag-row" id="diag-manifest" data-ok="0">
+            <span class="diag-row__label">Manifest</span>
+            <span class="diag-row__value">-</span>
+          </div>
+          <div class="diag-row" id="diag-display" data-ok="0">
+            <span class="diag-row__label">Display Mode</span>
+            <span class="diag-row__value">-</span>
+          </div>
+        </div>
+
+        <div class="diag-detail">
+          <p><b>SW</b><span id="diag-sw-detail">-</span></p>
+          <p><b>Manifest</b><span id="diag-manifest-detail">-</span></p>
+          <p><b>Prompt</b><span id="diag-prompt-detail">-</span></p>
+          <p><b>Secure</b><span id="diag-secure-detail">-</span></p>
+        </div>
+
+        <div class="diag-reasons-box">
+          <span class="field__label">判定</span>
+          <ul class="diag-reasons" id="diag-reasons"></ul>
+        </div>
+
+        <p class="diag-time">診断時刻 <span id="diag-time">-</span></p>
+
+        <div class="diag-actions">
+          <button class="btn btn--ghost btn--wide" id="btn-diag-rerun" type="button">再診断</button>
+          <button class="btn btn--ghost btn--wide" id="btn-diag-close" type="button">閉じる</button>
+        </div>
       </div>
     </div>
 

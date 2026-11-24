@@ -8,7 +8,7 @@
    ・旧バージョンのキャッシュは activate で削除
    ================================================================= */
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const CACHE_NAME = `shuttle-smash-${VERSION}`;
 const LEGACY_PREFIXES = ['bsc-', 'shuttle-smash-'];
 
@@ -48,6 +48,7 @@ const PRECACHE_ASSETS = [
   './js/ui/screens.js',
   './js/ui/ranking.js',
   './js/pwa/installer.js',
+  './js/pwa/diagnostics.js',
   './js/pwa/install.js',
 
   './assets/icon-192.png',

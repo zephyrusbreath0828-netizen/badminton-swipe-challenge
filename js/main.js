@@ -6,6 +6,7 @@ import { Game } from './game.js';
 import { Renderer } from './render/renderer.js';
 import { AudioManager } from './core/audio.js';
 import { Storage } from './core/storage.js';
+import { PlayerProfile } from './core/profile.js';
 import { Hud } from './ui/hud.js';
 import { Screens } from './ui/screens.js';
 import { initPWA, registerServiceWorker } from './pwa/install.js';
@@ -17,12 +18,14 @@ const canvas = document.getElementById('stage');
 const renderer = new Renderer(canvas);
 const audio = new AudioManager();
 const storage = new Storage();
+const profile = new PlayerProfile(storage.profile);   // 育成データ（localStorage から復元）
 const game = new Game({ settings: storage.settings, audio, storage });
 const hud = new Hud(game, storage);
-const screens = new Screens({ game, storage, audio, hud });
+const screens = new Screens({ game, storage, audio, hud, profile });
 
 audio.setEnabled(storage.settings.sound);
 game.setSettings(storage.settings);
+screens.applyAbilities();   // 育成値を初期状態から適用
 
 /* ------------------------------------------------------------------ */
 /* レイアウト                                                          */
@@ -58,7 +61,9 @@ function localPoint(e) {
 }
 
 function isInteractive(target) {
-  return !!(target && target.closest && target.closest('button, a, input, .no-swipe'));
+  return !!(target && target.closest && target.closest(
+    'button, a, input, .no-swipe, .install-banner, .install-dialog, .overlay, .panel, .diag-row',
+  ));
 }
 
 app.addEventListener('pointerdown', (e) => {
@@ -159,5 +164,5 @@ registerServiceWorker();
 requestAnimationFrame(frame);
 
 // デバッグ用（開発時のみ）
-window.__BSC__ = { game, renderer, screens, storage, audio };
+window.__BSC__ = { game, renderer, screens, storage, audio, profile };
 window.__SS__ = window.__BSC__;

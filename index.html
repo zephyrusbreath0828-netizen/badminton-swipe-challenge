@@ -4,16 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
 <title>Shuttle Smash</title>
-<meta name="description" content="スワイプで打ち分ける、スマホ向け本格バドミントン。ドロップ・クリア・ドライブ・スマッシュを使い分けてラリーを繋げよう。" />
+<meta name="description" content="スワイプで打ち分ける、スマホ向け本格バドミントン。キャラクターを育成してラリーを繋げよう。" />
 
 <!-- ===== PWA ===== -->
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#1e88e5" />
-<meta name="color-scheme" content="dark light" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="application-name" content="Shuttle Smash" />
 
-<!-- ===== iOS (Safari / ホーム画面追加) ===== -->
+<!-- ===== iOS ===== -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Shuttle Smash" />
@@ -29,6 +28,26 @@
 <link rel="stylesheet" href="css/screens.css" />
 <link rel="stylesheet" href="css/hud.css" />
 <link rel="stylesheet" href="css/pwa.css" />
+<link rel="stylesheet" href="css/training.css" />
+
+<!-- =================================================================
+     beforeinstallprompt の早期捕捉
+     モジュールスクリプトの実行より前に発火するケースがあるため、
+     ここで必ず受け取り window.__installPrompt に保持する。
+     ================================================================= -->
+<script>
+(function () {
+  window.__installPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    window.__installPrompt = e;
+    try { window.dispatchEvent(new CustomEvent('ss:installprompt')); } catch (err) {}
+  });
+  window.addEventListener('appinstalled', function () {
+    window.__installPrompt = null;
+  });
+})();
+</script>
 </head>
 <body>
 <div id="app">
@@ -39,7 +58,7 @@
     <!-- ============ ホーム ============ -->
     <section class="screen screen--home" data-screen="home" id="screen-home">
       <div class="home__top">
-        <p class="kicker">SPORTS ARCADE — v1.0.1</p>
+        <p class="kicker">SPORTS ARCADE — v1.2.0</p>
         <h1 class="hero">
           <span class="hero__small">Badminton</span>
           <span class="hero__big">Shuttle</span>
@@ -51,42 +70,94 @@
       <div class="home__bottom">
         <div class="home-card">
 
-          <!-- PWA インストール誘導（初回のみ / CSSで表示制御） -->
+          <!-- PWA インストール誘導 -->
           <div class="install-banner" id="install-banner" aria-hidden="true">
             <span class="install-banner__icon">
-              <img src="assets/icon-192.png" alt="" width="44" height="44" />
+              <img src="assets/icon-192.png" alt="" width="42" height="42" />
             </span>
             <div class="install-banner__body">
               <p class="install-banner__title">ホーム画面に追加</p>
               <p class="install-banner__text" id="install-banner-text">アプリとして全画面で起動できます</p>
             </div>
             <div class="install-banner__actions">
-              <button class="install-banner__cta" id="btn-install" type="button" data-install-action="install">追加する</button>
+              <button class="install-banner__cta" id="btn-install" type="button" data-install-action="install">インストール</button>
               <button class="install-banner__later" id="btn-install-later" type="button" data-install-action="later">あとで</button>
             </div>
           </div>
 
           <button class="btn btn--primary" id="btn-start">
-            <span class="btn__main">スタート</span>
+            <span class="btn__main">Play</span>
             <span class="btn__sub">TAP TO PLAY</span>
           </button>
 
-          <div class="home-card__row">
-            <button class="btn btn--ghost" id="btn-settings">
-              <span class="btn__icon">⚙</span>設定
+          <div class="home-menu">
+            <button class="menu-btn" id="btn-training" type="button">
+              <span class="menu-btn__icon">🏸</span>
+              <span class="menu-btn__label">Training</span>
+              <span class="menu-btn__sub">練習</span>
             </button>
-            <button class="btn btn--ghost" id="btn-ranking">
-              <span class="btn__icon">🏆</span>ランキング
+            <button class="menu-btn" id="btn-character" type="button">
+              <span class="menu-btn__icon">💪</span>
+              <span class="menu-btn__label">Character</span>
+              <span class="menu-btn__sub">育成</span>
+              <span class="menu-btn__dot" id="character-badge" hidden></span>
+            </button>
+            <button class="menu-btn" id="btn-settings" type="button">
+              <span class="menu-btn__icon">⚙</span>
+              <span class="menu-btn__label">Settings</span>
+              <span class="menu-btn__sub">設定</span>
             </button>
           </div>
 
-          <button class="pill" id="btn-hand-quick">
-            <span class="pill__label">利き手</span>
-            <span class="pill__value" data-hand-label>右利き</span>
-            <span class="pill__hint">タップで切替</span>
-          </button>
+          <div class="home-profile" id="home-profile">
+            <span class="home-profile__lv" id="home-lv">Lv.1</span>
+            <span class="home-profile__bar" id="home-exp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <i id="home-exp-fill"></i>
+            </span>
+            <span class="home-profile__pt" id="home-pt">0 pt</span>
+            <button class="home-profile__rank" id="btn-ranking" type="button" aria-label="ランキング">🏆</button>
+          </div>
         </div>
         <p class="footnote">画面をスワイプしてラケットを振る／移動は自動</p>
+      </div>
+    </section>
+
+    <!-- ============ 育成（Character） ============ -->
+    <section class="screen screen--panel" data-screen="character" id="screen-character">
+      <div class="panel panel--character">
+        <header class="panel__head">
+          <h2 class="panel__title">Character</h2>
+          <p class="panel__sub">育成 / TRAINING MENU</p>
+        </header>
+
+        <div class="char-head">
+          <p class="kicker">PLAYER LEVEL</p>
+          <div class="char-level">
+            <span class="char-level__label">LEVEL</span>
+            <span class="char-level__num" id="char-level">1</span>
+            <span class="char-level__max">/ 50</span>
+          </div>
+          <div class="char-exp">
+            <div class="char-exp__bar"><i id="char-exp-fill"></i></div>
+            <span class="char-exp__text" id="char-exp-text">0 / 40</span>
+          </div>
+          <div class="char-points">
+            <span>所持ポイント</span>
+            <strong id="char-points">0</strong>
+            <small>pt</small>
+          </div>
+        </div>
+
+        <div class="char-sub">
+          <span class="field__label">能力</span>
+          <span class="char-sub__sum" id="char-sum">200 / 400</span>
+        </div>
+
+        <div class="stat-list" id="stat-list"><!-- JSが生成 --></div>
+
+        <p class="char-footnote">＋をタップすると 1ポイント消費して能力が +1 されます（最大100）。</p>
+
+        <button class="btn btn--ghost btn--wide" id="btn-character-back">ホームに戻る</button>
       </div>
     </section>
 
@@ -127,10 +198,13 @@
             <span class="install-row__icon"><img src="assets/icon-192.png" alt="" width="30" height="30" /></span>
             <span class="install-row__body">
               <span class="install-row__label" id="btn-install-app-label">アプリをインストール</span>
-              <span class="install-row__hint">ホーム画面に追加して全画面で起動</span>
+              <span class="install-row__hint" id="btn-install-app-hint">ホーム画面に追加して全画面で起動</span>
             </span>
-            <span class="install-row__chev">›</span>
+            <span class="install-row__chev" id="install-row-chev">›</span>
           </button>
+          <p class="install-installed-note" id="install-installed-note" hidden>
+            アプリインストール済み — ホーム画面のアイコンからURLバーなしで起動できます。
+          </p>
         </div>
 
         <div class="field field--row">
@@ -162,6 +236,7 @@
           <span id="res-score">0</span><small>pt</small>
         </div>
         <p class="result-badge" id="res-badge" data-tone="plain">NEW RECORD!</p>
+        <p class="result-win" id="res-win" hidden>WINNER!</p>
 
         <div class="result-grid">
           <div class="result-item">
@@ -176,6 +251,19 @@
             <span class="result-item__label">到達レベル</span>
             <span class="result-item__value" id="res-level">1</span>
           </div>
+        </div>
+
+        <div class="reward" id="res-reward">
+          <div class="reward__head">
+            <span>獲得育成ポイント</span>
+            <strong id="res-points">0<small>pt</small></strong>
+          </div>
+          <ul class="reward__list" id="res-reward-list"></ul>
+          <div class="reward__exp">
+            <span>EXP <em id="res-exp-bonus"></em></span>
+            <b id="res-exp">+0</b>
+          </div>
+          <div class="reward__levelup" id="res-levelup"></div>
         </div>
 
         <p class="result-comment" id="res-comment"></p>
@@ -213,6 +301,8 @@
       <div class="level-bar" id="level-bar">
         <div class="level-bar__fill" id="level-fill"></div>
       </div>
+
+      <div class="hud__mode" id="hud-mode">TRAINING</div>
 
       <div class="toasts" id="toasts"></div>
 
@@ -284,29 +374,15 @@
       </div>
     </div>
 
-    <!-- ============ iOS インストール手順 ============ -->
-    <div class="ios-guide" id="ios-install-guide" aria-hidden="true" role="dialog" aria-label="ホーム画面への追加方法">
-      <div class="ios-guide__card">
-        <h2 class="ios-guide__title">ホーム画面に追加する</h2>
-        <p class="ios-guide__sub">Safari の共有メニューから3ステップで追加できます</p>
-        <ol class="ios-guide__steps">
-          <li class="ios-guide__step">
-            <span class="ios-guide__num">1</span>
-            <span class="ios-guide__text">画面下（または上部）の
-              <span class="ios-guide__glyph">□↑</span> 共有ボタンをタップ</span>
-          </li>
-          <li class="ios-guide__step">
-            <span class="ios-guide__num">2</span>
-            <span class="ios-guide__text">メニューを下にスクロールして
-              <b>「ホーム画面に追加」</b> を選択</span>
-          </li>
-          <li class="ios-guide__step">
-            <span class="ios-guide__num">3</span>
-            <span class="ios-guide__text">右上の <b>「追加」</b> をタップして完了</span>
-          </li>
-        </ol>
-        <p class="ios-guide__note">Android の Chrome をお使いの場合は、右上の ⋮ メニューから「アプリをインストール」を選べます。</p>
-        <button class="btn btn--ghost btn--wide" id="btn-ios-guide-close" type="button">閉じる</button>
+    <!-- ============ インストール手順ダイアログ ============ -->
+    <div class="install-dialog" id="install-dialog" aria-hidden="true" role="dialog" aria-label="インストール方法">
+      <div class="install-dialog__card">
+        <p class="kicker kicker--center">INSTALL</p>
+        <h2 class="install-dialog__title" id="install-dialog-title">インストール</h2>
+        <p class="install-dialog__lead" id="install-dialog-lead">iPhoneをご利用の場合</p>
+        <ol class="install-dialog__steps" id="install-dialog-steps"></ol>
+        <p class="install-dialog__note" id="install-dialog-note"></p>
+        <button class="btn btn--ghost btn--wide" id="btn-install-dialog-close" type="button">閉じる</button>
       </div>
     </div>
 

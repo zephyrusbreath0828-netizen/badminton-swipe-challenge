@@ -1,0 +1,498 @@
+/* =================================================================
+   v1.2.0 — 育成 / ホームメニュー / リザルト報酬 / インストールダイアログ
+   ================================================================= */
+
+/* ---------------- ホーム：メニュー ---------------- */
+.home-menu {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.menu-btn {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 11px 6px 9px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.16s ease;
+}
+.menu-btn:active { transform: translateY(2px) scale(0.98); background: rgba(255, 255, 255, 0.2); }
+.menu-btn__icon { font-size: 15px; line-height: 1.1; opacity: 0.95; }
+.menu-btn__label { font-size: 11.5px; font-weight: 900; letter-spacing: 0.02em; }
+.menu-btn__sub { font-size: 8.5px; font-weight: 700; color: rgba(255, 255, 255, 0.52); letter-spacing: 0.06em; }
+.menu-btn.is-badge { position: relative; }
+.menu-btn__dot {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd166;
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.22);
+  animation: dotPulse 1.8s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.72; }
+}
+
+/* ---------------- ホーム：プレイヤー帯 ---------------- */
+.home-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+.home-profile__lv {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--gold);
+  flex: 0 0 auto;
+}
+.home-profile__bar {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.home-profile__bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #7ee8fa, #16c79a);
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.home-profile__pt {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.72);
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.home-profile__rank {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 2px;
+}
+
+/* ---------------- 育成画面 ---------------- */
+.panel--character { gap: 13px; }
+
+.char-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 14px 12px;
+  border-radius: 20px;
+  background: linear-gradient(150deg, #0e4f8f, #0a3a6b 55%, #072a52);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(9, 52, 98, 0.28);
+}
+.char-head .kicker { color: rgba(255, 255, 255, 0.5); margin-bottom: 0; }
+
+.char-level {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.char-level__label {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-right: auto;
+}
+.char-level__num {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+.char-level__max { font-size: 12px; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
+
+.char-exp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.char-exp__bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.char-exp__bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #ffe08a, #ffc93c);
+  box-shadow: 0 0 10px rgba(255, 201, 60, 0.6);
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.char-exp__text {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.72);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.char-points {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.char-points span { font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.6); margin-right: auto; letter-spacing: 0.06em; }
+.char-points strong {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.char-points small { font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, 0.55); }
+
+/* ---- 能力リスト ---- */
+.stat-list { display: flex; flex-direction: column; gap: 8px; }
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 10px 11px;
+  border-radius: 16px;
+  background: rgba(12, 40, 56, 0.05);
+  border: 1px solid rgba(12, 40, 56, 0.06);
+}
+.stat-row.is-max { background: rgba(22, 199, 154, 0.09); border-color: rgba(22, 199, 154, 0.3); }
+
+.stat-row__top { display: flex; align-items: center; gap: 6px; }
+.stat-row__icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 10px;
+  color: #fff;
+  background: linear-gradient(180deg, #4fa8f0, #1e88e5);
+  flex: 0 0 auto;
+}
+.stat-row[data-key="stamina"] .stat-row__icon { background: linear-gradient(180deg, #ff8fa3, #e8475f); }
+.stat-row[data-key="accuracy"] .stat-row__icon { background: linear-gradient(180deg, #6ee7b7, #10a97b); }
+.stat-row[data-key="smash"] .stat-row__icon { background: linear-gradient(180deg, #ffb36b, #ef7b28); }
+
+.stat-row__name { font-size: 12.5px; font-weight: 900; color: var(--ink); }
+.stat-row__val {
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stat-row__val small { font-size: 9px; color: #93a6b2; font-weight: 800; }
+
+.stat-row__desc {
+  grid-column: 1 / -1;
+  font-size: 9.5px;
+  color: #7d909c;
+  line-height: 1.4;
+}
+.stat-row__bar {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(12, 40, 56, 0.1);
+  overflow: hidden;
+  margin: 1px 0 0;
+}
+.stat-row__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  width: 50%;
+  background: linear-gradient(90deg, #4fa8f0, #1e88e5);
+  transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stat-row[data-key="stamina"] .stat-row__bar i { background: linear-gradient(90deg, #ff8fa3, #e8475f); }
+.stat-row[data-key="accuracy"] .stat-row__bar i { background: linear-gradient(90deg, #6ee7b7, #10a97b); }
+.stat-row[data-key="smash"] .stat-row__bar i { background: linear-gradient(90deg, #ffb36b, #ef7b28); }
+.stat-row.is-max .stat-row__bar i { background: linear-gradient(90deg, #b6f36b, #16c79a); }
+
+.stat-row__plus {
+  pointer-events: auto;
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  background: linear-gradient(180deg, #3ec7a4, #0f9e7b);
+  box-shadow: 0 4px 0 #0a7d60, 0 8px 16px rgba(15, 158, 123, 0.3);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.16s ease;
+}
+.stat-row__plus:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #0a7d60, 0 4px 8px rgba(15, 158, 123, 0.3);
+}
+.stat-row__plus:disabled {
+  background: #cfdae1;
+  box-shadow: none;
+  color: #fff;
+  cursor: not-allowed;
+}
+.stat-row.is-max .stat-row__plus { background: linear-gradient(180deg, #b6f36b, #16c79a); box-shadow: none; color: #07503a; font-size: 12px; }
+
+.char-footnote {
+  margin: 0;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: #8fa3b0;
+  text-align: center;
+}
+
+/* ---------------- リザルト報酬 ---------------- */
+.reward {
+  width: 100%;
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: linear-gradient(140deg, rgba(30, 136, 229, 0.1), rgba(22, 199, 154, 0.07));
+  border: 1px solid rgba(30, 136, 229, 0.18);
+  text-align: left;
+}
+.reward__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.reward__head span { font-size: 9.5px; font-weight: 900; letter-spacing: 0.1em; color: #5d7383; }
+.reward__head strong {
+  font-size: 21px;
+  font-weight: 900;
+  color: #0f9e7b;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.reward__head strong small { font-size: 10px; margin-left: 1px; color: #6a8b84; }
+
+.reward__list {
+  list-style: none;
+  margin: 0 0 7px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.reward__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.75);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #4f6673;
+}
+.reward__item b { color: #0f9e7b; font-size: 10.5px; }
+
+.reward__exp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(30, 136, 229, 0.2);
+  font-size: 10px;
+  font-weight: 800;
+  color: #5d7383;
+}
+.reward__exp b { color: #1e88e5; font-size: 12px; font-variant-numeric: tabular-nums; }
+.reward__exp em { font-style: normal; font-size: 9px; color: #8fa3b0; font-weight: 700; }
+
+.reward__levelup {
+  margin-top: 6px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: #7a4f00;
+  background: linear-gradient(100deg, #ffe08a, #ffc93c);
+  display: none;
+}
+.reward__levelup.is-on { display: block; animation: levelPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes levelPop {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ---------------- トレーニング表示 ---------------- */
+.hud__mode {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 66px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: #04222e;
+  background: linear-gradient(100deg, #b6f36b, #16c79a);
+  box-shadow: 0 6px 16px rgba(22, 199, 154, 0.35);
+  display: none;
+}
+.hud.is-training .hud__mode { display: block; }
+.hud.is-training .stat--score,
+.hud.is-training .level-bar { display: none; }
+
+/* ---------------- インストール手順ダイアログ ---------------- */
+.install-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(3, 12, 19, 0.66);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.24s ease, visibility 0.24s;
+}
+.install-dialog.is-on { opacity: 1; visibility: visible; pointer-events: auto; }
+
+.install-dialog__card {
+  width: 100%;
+  max-width: 340px;
+  padding: 22px 18px 16px;
+  border-radius: 24px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.4);
+  transform: translateY(14px) scale(0.98);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.install-dialog.is-on .install-dialog__card { transform: none; }
+
+.install-dialog__title {
+  margin: 0 0 2px;
+  font-size: 19px;
+  font-weight: 900;
+  text-align: center;
+}
+.install-dialog__lead {
+  margin: 0 0 15px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #1e88e5;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.install-dialog__steps {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.install-dialog__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(30, 136, 229, 0.07);
+}
+.install-dialog__num {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1e88e5;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.install-dialog__text { font-size: 12px; font-weight: 700; line-height: 1.5; color: #33475a; }
+.install-dialog__text b { color: #1565c0; }
+.install-dialog__note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  background: #f3f7fa;
+  color: #7d909c;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---------------- 設定：インストール行の状態 ---------------- */
+.install-row[aria-disabled="true"] { cursor: default; }
+.install-row.is-installed {
+  border-color: rgba(22, 199, 154, 0.45);
+  background: linear-gradient(100deg, rgba(22, 199, 154, 0.14), rgba(22, 199, 154, 0.05));
+}
+.install-row.is-installed .install-row__icon {
+  filter: grayscale(0.15);
+  opacity: 0.9;
+}
+.install-row.is-installed .install-row__chev {
+  color: #16a97f;
+  font-size: 15px;
+}
+.install-installed-note {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 11px;
+  background: rgba(22, 199, 154, 0.09);
+  color: #0f7d61;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.55;
+}

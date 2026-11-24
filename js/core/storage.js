@@ -39,6 +39,8 @@ export class Storage {
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
       ranking: Array.isArray(parsed.ranking) ? parsed.ranking.slice(0, 20) : [],
       stats: parsed.stats || { plays: 0, bestScore: 0, bestRally: 0, smashes: 0 },
+      // 育成データ（v1.2.0〜）。未保存なら null（初回に既定値で生成）
+      profile: parsed.profile && typeof parsed.profile === 'object' ? parsed.profile : null,
     };
   }
 
@@ -94,6 +96,18 @@ export class Storage {
 
   get stats() {
     return this.data.stats;
+  }
+
+  /** 育成データの生JSON（PlayerProfile の復元用） */
+  get profile() {
+    return this.data.profile;
+  }
+
+  /** 育成データを保存 */
+  saveProfile(json) {
+    this.data.profile = json;
+    this._save();
+    return json;
   }
 
   clearRanking() {

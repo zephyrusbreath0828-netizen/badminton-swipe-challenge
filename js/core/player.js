@@ -10,7 +10,22 @@ const P = CONFIG.player;
 export class Player {
   constructor(handedness = 'right') {
     this.handedness = handedness;
+    // 育成パラメータ由来の補正（Game から注入）
+    this.speedMul = 1;
+    this.reachMul = 1;
+    this.fatigue = 0;
     this.reset();
+  }
+
+  /** 育成補正を適用 */
+  setAbilities({ speedMul = 1, reachMul = 1 } = {}) {
+    this.speedMul = speedMul;
+    this.reachMul = reachMul;
+  }
+
+  /** ラリー疲労 0..1 */
+  setFatigue(f = 0) {
+    this.fatigue = clamp(f, 0, 1);
   }
 
   reset() {
@@ -56,7 +71,7 @@ export class Player {
     const dx = this.targetX - this.x;
     const dz = this.targetZ - this.z;
     const d = Math.hypot(dx, dz);
-    const maxSpeed = P.moveSpeed;
+    const maxSpeed = P.moveSpeed * this.speedMul * (1 - 0.18 * this.fatigue);
 
     if (d > 0.02) {
       const desiredSpeed = Math.min(maxSpeed, d * 9);
@@ -96,6 +111,8 @@ export class Player {
     if (shuttle.lastHitter === 'player') return false;
     const dz = Math.abs(shuttle.pos.z - this.z);
     const dx = Math.abs(shuttle.pos.x - this.x);
-    return dz <= P.reachZ && dx <= P.reachX && shuttle.pos.y <= P.maxContactY && shuttle.pos.y >= 0;
+    return dz <= P.reachZ * this.reachMul
+      && dx <= P.reachX * this.reachMul
+      && shuttle.pos.y <= P.maxContactY && shuttle.pos.y >= 0;
   }
 }

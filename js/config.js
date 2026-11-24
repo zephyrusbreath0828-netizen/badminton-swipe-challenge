@@ -6,7 +6,7 @@
  */
 
 export const CONFIG = {
-  version: '1.0.1',
+  version: '1.2.0',
 
   storage: {
     key: 'bsc.v1',
@@ -93,6 +93,14 @@ export const CONFIG = {
     short: { id: 'shortServe', label: 'ショートサービス', flight: 1.4, depth: [7.4, 8.7], lateral: 0.6 },
     long: { id: 'longServe', label: 'ロングサービス', flight: 2.0, depth: [11.3, 12.9], lateral: 0.85 },
     flick: { id: 'flickServe', label: 'フリックサービス', flight: 1.16, depth: [10.6, 12.8], lateral: 0.85 },
+  },
+
+  /* 育成（v1.2.0） */
+  training: {
+    winWinners: 3,      // ウィナー3本以上で「勝利」（勝利報酬の対象）
+    fatigueStart: 5,    // 疲労が始まるラリー数
+    fatigueSpan: 15,    // 疲労が最大になるまでのラリー数
+    maxLevel: 50,
   },
 
   /* 得点 */

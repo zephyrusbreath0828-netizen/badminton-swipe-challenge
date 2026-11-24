@@ -1,6 +1,6 @@
 {
   "name": "shuttle-smash",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "スワイプで打ち分けるスマホ向けバドミントンゲーム（PWA / 静的サイト）",
@@ -10,9 +10,9 @@
     "dev": "npx --yes serve . -l 3000",
     "start": "npx --yes serve . -l 3000",
     "serve:python": "python3 -m http.server 3000",
-    "test": "node tools/smoke-test.mjs",
+    "test": "node tools/smoke-test.mjs && node tools/dom-test.mjs",
     "check:pwa": "node tools/pwa-check.mjs",
-    "verify": "node tools/smoke-test.mjs && node tools/pwa-check.mjs"
+    "verify": "node tools/smoke-test.mjs && node tools/dom-test.mjs && node tools/pwa-check.mjs"
   },
   "engines": {
     "node": ">=18"

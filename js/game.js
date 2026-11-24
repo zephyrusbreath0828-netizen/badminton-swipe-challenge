@@ -10,6 +10,7 @@ import { AI } from './core/ai.js';
 import { Effects } from './core/effects.js';
 import { resolveServe, resolvePlayerShot } from './core/shot.js';
 import { clamp, rand, chance } from './core/math.js';
+import { deriveAbilities, effectiveModifiers, BASE_ABILITIES } from './core/training.js';
 
 const COURT = CONFIG.court;
 
@@ -22,6 +23,11 @@ export class Game {
     this.effects = new Effects();
     this.audio = audio || null;
     this.storage = storage || null;
+
+    /* 育成（v1.2.0） */
+    this.abilities = BASE_ABILITIES;   // 育成パラメータ由来の倍率
+    this.mods = effectiveModifiers(0, BASE_ABILITIES);
+    this.training = false;             // 練習モード（報酬・リザルトなし）
 
     this.phase = 'home';       // home | serve | rally | freeze | result
     this.paused = false;
@@ -55,6 +61,21 @@ export class Game {
     for (const fn of list) {
       try { fn(data); } catch (e) { /* UIエラーでゲームを止めない */ }
     }
+  }
+
+  /** 育成パラメータを反映（試合開始時・強化直後に呼ぶ） */
+  setAbilities(abilities) {
+    this.abilities = abilities || BASE_ABILITIES;
+    this.refreshMods();
+    return this.abilities;
+  }
+
+  /** ラリー数と疲労を加味した実効補正を再計算 */
+  refreshMods() {
+    this.mods = effectiveModifiers(this.rally, this.abilities);
+    this.player.setAbilities({ speedMul: this.mods.speedMul, reachMul: this.mods.reachMul });
+    this.player.setFatigue(this.mods.fatigue);
+    return this.mods;
   }
 
   setSettings(settings) {
@@ -101,6 +122,7 @@ export class Game {
   /** プレイ開始 */
   startRun() {
     this.resetRun();
+    this.training = false;
     this.demo = false;
     this.paused = false;
     this.result = null;
@@ -110,7 +132,21 @@ export class Game {
     this.emit('state', { phase: this.phase, demo: false });
   }
 
+  /** 練習モード（スコア・報酬・リザルトなし／ラリー継続重視） */
+  startTraining() {
+    this.resetRun();
+    this.demo = false;
+    this.training = true;
+    this.paused = false;
+    this.result = null;
+    this.phase = 'serve';
+    this.phaseTimer = 0;
+    this.beginServe();
+    this.emit('state', { phase: this.phase, demo: false, training: true });
+  }
+
   goHome() {
+    this.training = false;
     this.startDemo();
     this.emit('state', { phase: 'home', demo: true });
   }
@@ -146,7 +182,7 @@ export class Game {
     this.shuttle.hold(this.player.x + 0.32, 1.08, this.player.z + 0.26);
     this.player.setTarget(this.player.x * 0.6, CONFIG.player.homeZ);
     this.hitCooldown = 0;
-    if (!this.demo) this.emit('state', { phase: 'serve', demo: false });
+    if (!this.demo) this.emit('state', { phase: 'serve', demo: false, training: this.training });
     this.emit('serve', {});
   }
 
@@ -192,7 +228,7 @@ export class Game {
     this.phase = 'rally';
     this.phaseTimer = 0;
     this.rally = 0;
-    if (!this.demo) this.emit('state', { phase: 'rally', demo: false });
+    if (!this.demo) this.emit('state', { phase: 'rally', demo: false, training: this.training });
     this.emit('shot', { ...shot, owner: 'player', isServe: true });
   }
 
@@ -210,6 +246,7 @@ export class Game {
       return;
     }
 
+    const mods = this.mods || BASE_ABILITIES;
     const shot = resolvePlayerShot({
       swipe,
       contactY: s.pos.y,
@@ -218,7 +255,12 @@ export class Game {
       handedness: this.player.handedness,
       speedScale: this.speedScale,
       level: this.level,
+      accuracyMul: mods.accuracyMul,
+      fatigue: mods.fatigue,
     });
+
+    // スマッシュ威力（育成）で球速が上がる
+    if (shot.type === 'smash') shot.flight *= (mods.smashFlightMul || 1);
 
     const kind = shot.type === 'smash' ? 'down' : shot.type === 'drive' ? 'side' : 'up';
     this.player.swing(kind);
@@ -249,8 +291,11 @@ export class Game {
 
     if (shot.type === 'smash') {
       this.smashes += 1;
-      this.addScore(CONFIG.scoring.returnPoints + CONFIG.scoring.smashBonus, {
-        label: 'スマッシュ成功', sub: `+${CONFIG.scoring.returnPoints + CONFIG.scoring.smashBonus}`, tone: 'smash',
+      const smashPts = Math.round(
+        (CONFIG.scoring.returnPoints + CONFIG.scoring.smashBonus) * (mods.smashScoreMul || 1),
+      );
+      this.addScore(smashPts, {
+        label: 'スマッシュ成功', sub: `+${smashPts}`, tone: 'smash',
       });
       this.effects.addShake(1);
       if (this.audio) this.audio.hit('smash');
@@ -312,7 +357,7 @@ export class Game {
   /* スコア                                                              */
   /* ------------------------------------------------------------------ */
   addScore(points, { label = '', sub = '', tone = 'normal' } = {}) {
-    if (this.demo) return;
+    if (this.demo || this.training) return;
     this.score += points;
     this.emit('score', { points, total: this.score, label, sub, tone });
     const targetLevel = Math.floor(this.score / CONFIG.scoring.levelStep) + 1;
@@ -336,6 +381,18 @@ export class Game {
       this.phaseTimer = 0;
       this.pending = 'serve';
       this.emit('callout', { title: message || '', tone });
+      return;
+    }
+
+    // 練習モード: ミスしても終了せずサーブから再開
+    if (this.training) {
+      this.phase = 'freeze';
+      this.phaseTimer = 0;
+      this.pending = 'serve';
+      this.emit('callout', {
+        title: kind === 'winner' ? 'ナイス！' : (message || '続けよう'),
+        tone: kind === 'winner' ? 'good' : 'normal',
+      });
       return;
     }
 
@@ -370,11 +427,18 @@ export class Game {
       smashes: this.smashes,
       returns: this.returns,
       winners: this.winners,
+      // 勝利判定（既定: ウィナー3本以上）
+      win: this.winners >= CONFIG.training.winWinners,
+      training: false,
       date: Date.now(),
     };
   }
 
   finishRun() {
+    if (this.training) {
+      this.goHome();
+      return;
+    }
     this.phase = 'result';
     this.result = this.buildResult();
     this.emit('result', this.result);
@@ -388,6 +452,10 @@ export class Game {
     this.time += dt;
     this.hitCooldown = Math.max(0, this.hitCooldown - dt);
     this.phaseTimer += dt;
+
+    if (!this.paused && (this.phase === 'rally' || this.phase === 'serve')) {
+      this.refreshMods();
+    }
 
     if (this.paused) {
       this.effects.update(dt * 0.15);

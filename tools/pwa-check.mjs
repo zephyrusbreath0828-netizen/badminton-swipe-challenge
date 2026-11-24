@@ -103,7 +103,8 @@ check('apple-mobile-web-app-capable', /apple-mobile-web-app-capable"\s+content="
 check('apple-mobile-web-app-title', /apple-mobile-web-app-title"\s+content="Shuttle Smash"/.test(html));
 check('apple-touch-icon を参照', /rel="apple-touch-icon"[^>]*href="assets\/apple-touch-icon\.png"/.test(html));
 check('インストールバナーDOM', /id="install-banner"/.test(html));
-check('iOS手順ガイドDOM', /id="ios-install-guide"/.test(html));
+check('インストール手順ダイアログDOM', /id="install-dialog"/.test(html) && /id="install-dialog-steps"/.test(html));
+check('beforeinstallprompt 早期捕捉スクリプト', /__installPrompt/.test(html));
 check('更新通知DOM', /id="update-toast"/.test(html));
 check('縦画面案内DOM', /id="rotate-notice"/.test(html));
 
@@ -130,7 +131,8 @@ check('全プリキャッシュ対象ファイルが存在', missing.length === 
 
 const gameFiles = precache.filter((u) => /js\/core\/|js\/render\/|js\/game\.js/.test(u));
 check('ゲーム本体のJSがキャッシュ対象', gameFiles.length >= 12, String(gameFiles.length));
-check('CSSがキャッシュ対象', precache.filter((u) => u.endsWith('.css')).length === 4);
+check('CSSがキャッシュ対象（4本以上）', precache.filter((u) => u.endsWith('.css')).length >= 4,
+  String(precache.filter((u) => u.endsWith('.css')).length));
 check('アイコン画像がキャッシュ対象', precache.filter((u) => u.includes('/assets/')).length >= 8);
 check('manifest.json をキャッシュ対象', precache.includes('./manifest.json'));
 
@@ -284,7 +286,10 @@ check('index.html が service-worker.js を参照しない（登録はJS側）',
 const installSrc = await readFile(path.join(ROOT, 'js/pwa/install.js'), 'utf8');
 check('service-worker.js を登録している', /register\('\.\/service-worker\.js'/.test(installSrc));
 check('beforeinstallprompt を処理', /beforeinstallprompt/.test(installSrc));
-check('iOS 判定を含む', /iPad\|iPhone\|iPod/.test(installSrc));
+const installerSrc = await readFile(path.join(ROOT, 'js/pwa/installer.js'), 'utf8');
+check('iOS 判定を含む', /iPad\|iPhone\|iPod/.test(installerSrc));
+check('userChoice を処理している', /userChoice/.test(installerSrc));
+check('prompt() を呼んでいる', /\.prompt\(\)/.test(installerSrc));
 check('appinstalled を処理', /appinstalled/.test(installSrc));
 
 console.log(

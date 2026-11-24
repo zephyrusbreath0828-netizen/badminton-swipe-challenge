@@ -1,110 +1,184 @@
 /**
- * PWA インストール誘導 / スタンドアロン判定 / 更新通知
+ * PWA インストール UI（DOM 配線のみ）
  * ------------------------------------------------------------------
- * ・Chrome / Edge / Android: beforeinstallprompt を捕捉して独自バナーから提示
- * ・iOS Safari: 共有シートからの「ホーム画面に追加」手順を案内
- * ・スタンドアロン起動時は一切表示しない
- * ゲームロジックには一切触れない（DOMのみ）。
+ * 実際の判定・プロンプト制御は pwa/installer.js（純ロジック）が担当する。
+ *
+ * ・beforeinstallprompt は index.html の冒頭スクリプトが最速で捕捉し、
+ *   window.__installPrompt に保持 → ここで受け取る（取りこぼし対策）
+ * ・Android/Chrome: ネイティブのインストールダイアログを表示
+ * ・iPhone/Safari: 「共有 → ホーム画面に追加 → 追加」の手順ダイアログ
+ * ・インストール済み: ボタンを隠し「アプリインストール済み」と表示
  */
-
-const STORE_KEY = 'shuttleSmash.install';
-const DISMISS_DAYS = 7;
+import {
+  PwaInstaller,
+  createStore,
+  detectPlatform,
+  isStandalone,
+} from './installer.js';
 
 const $ = (id) => document.getElementById(id);
 
-/* ------------------------------------------------------------------ */
-/* 環境判定                                                            */
-/* ------------------------------------------------------------------ */
 export const env = {
-  get standalone() {
-    return (
-      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-      (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) ||
-      window.navigator.standalone === true
-    );
-  },
-  get isIOS() {
-    const ua = navigator.userAgent || '';
-    if (/iPad|iPhone|iPod/.test(ua)) return true;
-    // iPadOS 13+ は Mac を名乗るためタッチ点数で判定
-    return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  },
+  get standalone() { return isStandalone(window); },
+  get platform() { return detectPlatform(navigator); },
+  get isIOS() { return detectPlatform(navigator) === 'ios'; },
+  get isAndroid() { return detectPlatform(navigator) === 'android'; },
   get isSafari() {
     const ua = navigator.userAgent || '';
     return /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/.test(ua);
   },
-  get isAndroid() {
-    return /Android/.test(navigator.userAgent || '');
+  get isMobile() { return this.platform !== 'desktop'; },
+};
+
+/* 手順ダイアログの文言 */
+const GUIDE = {
+  ios: {
+    lead: 'iPhone / iPad をご利用の場合',
+    title: 'ホーム画面に追加',
+    steps: [
+      'Safari 下部（または上部）の <b>共有ボタン</b> をタップ',
+      'メニューの <b>「ホーム画面に追加」</b> を選択',
+      '<b>「追加」</b> をタップしてインストール完了',
+    ],
+    note: 'ホーム画面のアイコンから、URLバーなしの全画面で起動できます。',
   },
-  get isMobile() {
-    return this.isIOS || this.isAndroid || /Mobi/.test(navigator.userAgent || '');
+  android: {
+    lead: 'Android をご利用の場合',
+    title: 'アプリをインストール',
+    steps: [
+      'Chrome 右上の <b>⋮（メニュー）</b> をタップ',
+      '<b>「アプリをインストール」</b> または「ホーム画面に追加」を選択',
+      '<b>「インストール」</b> をタップして完了',
+    ],
+    note: 'このブラウザではインストールダイアログを直接開けませんでした。',
+  },
+  desktop: {
+    lead: 'パソコンをご利用の場合',
+    title: 'アプリをインストール',
+    steps: [
+      'アドレスバー右側の <b>インストールアイコン</b> をクリック',
+      '<b>「インストール」</b> を選択',
+      'デスクトップアプリとして起動できます',
+    ],
+    note: 'Chrome / Edge でご利用ください。',
   },
 };
 
-/* ------------------------------------------------------------------ */
-/* 保存状態                                                            */
-/* ------------------------------------------------------------------ */
-function readState() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {};
-  } catch (e) {
-    return {};
-  }
-}
-
-function writeState(patch) {
-  const next = { ...readState(), ...patch };
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(next));
-  } catch (e) {
-    /* ストレージ不可でも動作継続 */
-  }
-  return next;
-}
-
-/* ------------------------------------------------------------------ */
-/* 本体                                                                */
-/* ------------------------------------------------------------------ */
 export function initPWA() {
+  const store = createStore(window.localStorage);
+  const installer = new PwaInstaller({ win: window, nav: navigator, store });
+
+  /* ---------- DOM ---------- */
   const banner = $('install-banner');
-  const guide = $('ios-install-guide');
-  const settingsBtn = $('btn-install-app');
-  const settingsLabel = $('btn-install-app-label');
+  const dialog = $('install-dialog');
+  const rowBtn = $('btn-install-app');
+  const rowLabel = $('btn-install-app-label');
+  const rowHint = $('btn-install-app-hint');
+  const installedNote = $('install-installed-note');
+  const cta = $('btn-install');
+  const later = $('btn-install-later');
+  const bannerText = $('install-banner-text');
 
-  let deferredPrompt = null;
   let bannerShown = false;
+  let lastLevelUpAt = 0;
 
-  const isInstalled = () => env.standalone || readState().installed === true;
-
-  /* ---- UI 反映 ---- */
-  function syncSettingsRow() {
-    if (!settingsBtn || !settingsLabel) return;
-    if (isInstalled()) {
-      settingsLabel.textContent = 'インストール済み';
-      settingsBtn.dataset.state = 'installed';
-      settingsBtn.disabled = false;
-      settingsBtn.setAttribute('aria-disabled', 'true');
-    } else {
-      settingsLabel.textContent = env.isIOS ? 'ホーム画面に追加（手順を見る）' : 'アプリをインストール';
-      settingsBtn.dataset.state = 'available';
-      settingsBtn.disabled = false;
-      settingsBtn.removeAttribute('aria-disabled');
+  /* ---------- 早期捕捉済みイベントの取り込み ---------- */
+  function adoptEarlyPrompt() {
+    const early = window.__installPrompt;
+    if (early && !installer.canPrompt) {
+      installer.capturePrompt(early);
+      window.__installPrompt = null;
     }
   }
 
+  window.addEventListener('ss:installprompt', () => {
+    adoptEarlyPrompt();
+    scheduleBanner();
+  });
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    // index.html の早期ハンドラが無い場合のフォールバック
+    installer.capturePrompt(e);
+    scheduleBanner();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    installer.markInstalled();
+    hideBanner();
+    hideDialog();
+    notify('ホーム画面に追加しました');
+  });
+
+  /* ---------- 表示更新 ---------- */
+  function syncUI() {
+    const snap = installer.snapshot();
+
+    // 設定画面の行
+    if (rowBtn && rowLabel) {
+      if (snap.installed) {
+        rowLabel.textContent = 'アプリインストール済み';
+        rowBtn.dataset.state = 'installed';
+        rowBtn.setAttribute('aria-disabled', 'true');
+        rowBtn.classList.add('is-installed');
+        if (rowHint) rowHint.textContent = 'ホーム画面から全画面で起動できます';
+        if (installedNote) installedNote.hidden = false;
+      } else {
+        rowLabel.textContent = snap.canPrompt
+          ? 'アプリをインストール'
+          : (snap.platform === 'ios' ? 'ホーム画面に追加' : 'インストール方法を見る');
+        rowBtn.dataset.state = 'available';
+        rowBtn.removeAttribute('aria-disabled');
+        rowBtn.classList.remove('is-installed');
+        if (rowHint) rowHint.textContent = 'ホーム画面に追加して全画面で起動';
+        if (installedNote) installedNote.hidden = true;
+      }
+    }
+
+    // バナー
+    if (banner) {
+      if (snap.installed) hideBanner();
+      if (cta) {
+        cta.textContent = snap.canPrompt ? 'インストール' : '追加方法';
+      }
+      if (bannerText) {
+        bannerText.textContent = snap.platform === 'ios'
+          ? '共有メニューからホーム画面に追加できます'
+          : 'アプリとして全画面で起動できます';
+      }
+    }
+  }
+
+  /* ---------- ダイアログ ---------- */
+  function openDialog() {
+    if (!dialog) return;
+    const kind = installer.guideKind;
+    const conf = GUIDE[kind] || GUIDE.desktop;
+    const lead = $('install-dialog-lead');
+    const title = $('install-dialog-title');
+    const steps = $('install-dialog-steps');
+    const note = $('install-dialog-note');
+    if (lead) lead.textContent = conf.lead;
+    if (title) title.textContent = conf.title;
+    if (steps) {
+      steps.innerHTML = conf.steps
+        .map((t, i) => `<li class="install-dialog__step"><span class="install-dialog__num">${i + 1}</span><span class="install-dialog__text">${t}</span></li>`)
+        .join('');
+    }
+    if (note) note.textContent = conf.note;
+    dialog.classList.add('is-on');
+    dialog.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideDialog() {
+    if (!dialog) return;
+    dialog.classList.remove('is-on');
+    dialog.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ---------- バナー ---------- */
   function showBanner() {
-    if (!banner || isInstalled() || bannerShown) return;
+    if (!banner || bannerShown || installer.installed) return;
     bannerShown = true;
-    const text = $('install-banner-text');
-    if (text) {
-      text.textContent = env.isIOS
-        ? '共有メニューから追加できます'
-        : 'アプリとして全画面で起動できます';
-    }
-    const cta = $('btn-install');
-    if (cta) {
-      cta.textContent = env.isIOS ? '手順を見る' : '追加する';
-    }
     banner.classList.add('is-on');
     banner.setAttribute('aria-hidden', 'false');
   }
@@ -113,145 +187,126 @@ export function initPWA() {
     if (!banner) return;
     banner.classList.remove('is-on');
     banner.setAttribute('aria-hidden', 'true');
-    if (userDismissed) writeState({ dismissedAt: Date.now() });
+    if (userDismissed) store.set({ dismissedAt: Date.now() });
   }
 
-  function showGuide() {
-    if (!guide) return;
-    guide.classList.add('is-on');
-    guide.setAttribute('aria-hidden', 'false');
+  function scheduleBanner() {
+    if (installer.installed) return;
+    const state = store.get();
+    const dismissedAt = state.dismissedAt || 0;
+    const wait = dismissedAt ? 7 * 24 * 60 * 60 * 1000 : 0;
+    if (Date.now() - dismissedAt < wait) return;
+    setTimeout(() => {
+      const home = $('screen-home');
+      if (home && home.classList.contains('is-active')) showBanner();
+    }, dismissedAt ? 1500 : 1200);
   }
 
-  function hideGuide() {
-    if (!guide) return;
-    guide.classList.remove('is-on');
-    guide.setAttribute('aria-hidden', 'true');
-  }
+  /* ---------- インストール実行 ---------- */
+  async function requestInstall({ fromBanner = false } = {}) {
+    adoptEarlyPrompt();
+    const snap = installer.snapshot();
 
-  /* ---- インストール実行 ---- */
-  async function triggerInstall() {
-    if (isInstalled()) {
-      syncSettingsRow();
-      return;
+    if (snap.installed) {
+      notify('すでにホーム画面に追加されています');
+      syncUI();
+      return { outcome: 'installed' };
     }
-    if (deferredPrompt) {
-      hideBanner();
-      deferredPrompt.prompt();
-      try {
-        const choice = await deferredPrompt.userChoice;
-        if (choice && choice.outcome === 'accepted') {
-          writeState({ installed: true });
-        }
-      } catch (e) {
-        /* ユーザーが閉じた場合など */
+
+    // 1) ネイティブプロンプトが使える（Android Chrome / PC Chrome）
+    if (installer.canPrompt) {
+      if (fromBanner) hideBanner();
+      const res = await installer.prompt();
+      syncUI();
+      if (res.outcome === 'accepted') notify('インストールしました');
+      else if (res.outcome === 'dismissed') {
+        // 一度閉じると Chrome は再プロンプト不可。手順を案内する
+        openDialog();
+      } else if (res.outcome === 'error') {
+        openDialog();
       }
-      deferredPrompt = null;
-      syncSettingsRow();
-      return;
+      return res;
     }
-    // プロンプトが使えない環境（iOS Safari / 既にインストール済み / 非対応ブラウザ）
-    showGuide();
+
+    // 2) プロンプト不可（iOS Safari / インストール不成立の Chrome）
+    if (fromBanner) hideBanner();
+    openDialog();
+    return { outcome: 'unavailable' };
   }
 
-  /* ---- イベント登録 ---- */
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    scheduleBanner();
-  });
-
-  window.addEventListener('appinstalled', () => {
-    deferredPrompt = null;
-    writeState({ installed: true });
-    hideBanner();
-    hideGuide();
-    syncSettingsRow();
-    notify('ホーム画面に追加しました');
-  });
+  /* ---------- イベント配線 ---------- */
+  if (rowBtn) {
+    rowBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      requestInstall();
+    });
+  }
 
   if (banner) {
     banner.addEventListener('click', (e) => {
       if (e.target.closest('[data-install-action]')) return;
-      triggerInstall();
+      requestInstall({ fromBanner: true });
     });
-    const cta = $('btn-install');
-    if (cta) cta.addEventListener('click', (e) => { e.stopPropagation(); triggerInstall(); });
-    const later = $('btn-install-later');
-    if (later) {
-      later.addEventListener('click', (e) => {
-        e.stopPropagation();
-        hideBanner(true);
-      });
-    }
+  }
+  if (cta) {
+    cta.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      requestInstall({ fromBanner: true });
+    });
+  }
+  if (later) {
+    later.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      hideBanner(true);
+    });
   }
 
-  if (guide) {
-    guide.addEventListener('click', (e) => {
-      if (e.target === guide) hideGuide();
+  if (dialog) {
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) hideDialog();
     });
-    const close = $('btn-ios-guide-close');
+    const close = $('btn-install-dialog-close');
     if (close) close.addEventListener('click', () => {
-      hideGuide();
-      writeState({ dismissedAt: Date.now() });
+      hideDialog();
+      store.set({ dismissedAt: Date.now() });
     });
   }
 
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
-      if (isInstalled()) {
-        notify('すでにホーム画面に追加されています');
-        return;
+  /* ---------- 状態変化の購読 ---------- */
+  installer.onChange(() => syncUI());
+
+  const mq = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
+  if (mq && mq.addEventListener) {
+    mq.addEventListener('change', () => {
+      if (isStandalone(window)) {
+        installer.markInstalled();
+        hideBanner();
+        hideDialog();
       }
-      triggerInstall();
+      syncUI();
     });
   }
 
-  /* ---- 初回表示のスケジュール ---- */
-  function scheduleBanner() {
-    if (isInstalled()) return;
-    const state = readState();
-    const dismissedAt = state.dismissedAt || 0;
-    const wait = dismissedAt ? DISMISS_DAYS * 24 * 60 * 60 * 1000 : 0;
-    if (Date.now() - dismissedAt < wait) return;
-
-    const delay = dismissedAt ? 1500 : 1400;
-    setTimeout(() => {
-      // ホーム画面を表示しているときだけ出す
-      const home = $('screen-home');
-      if (home && home.classList.contains('is-active')) showBanner();
-    }, delay);
-  }
-
-  // 起動直後にホーム以外（オートスタート等）の場合は、ホームに戻った時に出す
-  let pendingBanner = !isInstalled();
+  /* ---------- ホーム復帰時にバナー ---------- */
   const homeEl = $('screen-home');
   if (homeEl && 'MutationObserver' in window) {
-    const mo = new MutationObserver(() => {
+    new MutationObserver(() => {
       const active = homeEl.classList.contains('is-active');
-      if (active && pendingBanner && !bannerShown) scheduleBanner();
-      if (!active) hideBanner();
-      pendingBanner = active;
-    });
-    mo.observe(homeEl, { attributes: true, attributeFilter: ['class'] });
+      if (active) scheduleBanner();
+      else hideBanner();
+    }).observe(homeEl, { attributes: true, attributeFilter: ['class'] });
   }
 
-  /* ---- インストール可否の判定（Chrome のインストール可能性） ---- */
-  const standaloneQuery = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
-  if (standaloneQuery && standaloneQuery.addEventListener) {
-    standaloneQuery.addEventListener('change', () => {
-      if (env.standalone) {
-        hideBanner();
-        hideGuide();
-        writeState({ installed: true });
-      }
-      syncSettingsRow();
-    });
-  }
-
-  syncSettingsRow();
+  adoptEarlyPrompt();
+  syncUI();
   scheduleBanner();
 
-  return { triggerInstall, showGuide, hideBanner };
+  // デバッグ・テスト用
+  window.__installer = installer;
+  return { installer, requestInstall, openDialog, syncUI };
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,7 +320,6 @@ export function registerServiceWorker() {
     navigator.serviceWorker
       .register('./service-worker.js', { scope: './' })
       .then((reg) => {
-        // 更新が見つかったら控えめに通知
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
           if (!worker) return;
@@ -275,18 +329,14 @@ export function registerServiceWorker() {
             }
           });
         });
-        // 6時間おきに更新チェック（起動中のヘビーユーザー向け）
         setInterval(() => reg.update().catch(() => {}), 6 * 60 * 60 * 1000);
       })
-      .catch(() => {
-        /* 登録失敗時もゲームは通常動作 */
-      });
+      .catch(() => { /* 登録失敗時もゲームは通常動作 */ });
   };
 
   if (document.readyState === 'complete') onLoad();
   else window.addEventListener('load', onLoad);
 
-  // 新しい SW が制御を奪ったら一度だけリロード
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloaded) return;

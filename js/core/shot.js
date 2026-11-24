@@ -100,6 +100,7 @@ export function resolveServe({ swipe, playerX, handedness, speedScale = 1, level
  */
 export function resolvePlayerShot({
   swipe, contactY, contactX, playerX, handedness, speedScale = 1, level = 1,
+  accuracyMul = 1, fatigue = 0,
 }) {
   const up = swipe.up;          // + = 上方向
   const side = Math.abs(swipe.side);
@@ -154,17 +155,20 @@ export function resolvePlayerShot({
 
   // バックハンド / 打点不良はばらつく
   const acc = handAcc * QUALITY_ACC[quality];
-  const spread = (1 - acc) * 2.2;
+  // 育成（ショット精度）× 疲労でコースのばらつきが変化する
+  const spread = (1 - acc) * 2.2 * clamp(accuracyMul, 0.3, 1.6) * (1 + fatigue * 0.5);
   tx += rand(-1, 1) * spread * 0.55;
   tx = clamp(tx, -COURT.halfWidth + 0.1, COURT.halfWidth - 0.1);
 
   // ---- 深さ ----
   const depthT = clamp((power - 0.55) / 0.85, 0, 1);
   let tz = lerp(def.depth[0], def.depth[1], depthT);
-  tz += rand(-1, 1) * (1 - acc) * 1.1;
+  tz += rand(-1, 1) * (1 - acc) * 1.1 * clamp(accuracyMul, 0.3, 1.6) * (1 + fatigue * 0.4);
 
-  // 威力過多のバックハンドはアウトしやすい
-  if (acc < 0.75 && power > 1.12) tz += rand(0.2, 0.9);
+  // 威力過多のバックハンドはアウトしやすい（精度が高いと抑えられる）
+  if (acc < 0.75 && power > 1.12 && Math.random() < clamp(accuracyMul, 0.2, 1)) {
+    tz += rand(0.2, 0.9);
+  }
 
   const flight = def.flight / (speedScale * (0.78 + power * 0.3));
   const overshoot = tz > COURT.length - 0.05 || Math.abs(tx) > COURT.halfWidth + 0.02;
@@ -185,6 +189,8 @@ export function resolvePlayerShot({
     aim,
     out: overshoot,
     fault: null,
+    accuracyMul,
+    fatigue,
   };
 }
 

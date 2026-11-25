@@ -519,5 +519,88 @@ console.log('\n[7] PWA 診断（実API → 画面表示）');
   check('runDiagnostics が結果を返す', !!d3 && typeof d3.labels.sw === 'string');
 }
 
+console.log('\n[8] 開発者モード（タイトル5連打 / v1.2.7）');
+{
+  const dom = new JSDOM(HTML, {
+    url: 'https://example.test/',
+    runScripts: 'dangerously',   // index.html のインライン開発者モードを実行する
+    pretendToBeVisual: true,
+  });
+  const w = dom.window;
+  const dev = w.document.getElementById('dev-section');
+  check('開発者メニューは既定で非表示', dev.hidden === true);
+
+  const diagBtn = w.document.getElementById('btn-pwa-diag');
+  check('PWA診断は開発者メニューの中にある', !!dev.querySelector('#btn-pwa-diag'));
+  check('設定の通常項目にPWA診断が露出していない',
+    diagBtn.closest('#dev-section') !== null);
+
+  const title = w.document.getElementById('app-title');
+  check('タイトル要素が存在する', !!title);
+
+  // 4回では開かない
+  for (let i = 0; i < 4; i += 1) title.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  check('4回タップでは開かない', dev.hidden === true);
+
+  // 5回目で解放
+  title.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  check('5回タップで開発者メニューが表示される', dev.hidden === false, String(dev.hidden));
+  check('解放状態が localStorage に保存される', w.localStorage.getItem('shuttleSmash.dev') === '1',
+    String(w.localStorage.getItem('shuttleSmash.dev')));
+  check('PWA診断ボタンが押せる状態になる', diagBtn.disabled === false && dev.hidden === false);
+
+  // 無効化
+  w.document.getElementById('btn-dev-off')
+    .dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  check('無効化で再び非表示', dev.hidden === true);
+  check('無効化で localStorage から消える', w.localStorage.getItem('shuttleSmash.dev') === null,
+    String(w.localStorage.getItem('shuttleSmash.dev')));
+
+  // 間隔が空いたらカウントはリセットされる
+  let fakeNow = 10000;
+  w.Date.now = () => fakeNow;
+  for (let i = 0; i < 4; i += 1) { fakeNow += 100; title.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); }
+  fakeNow += 5000;                     // 1500ms を超えて間隔が空く
+  title.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  check('連続していないタップでは解放されない', dev.hidden === true);
+}
+
+console.log('\n[9] Training / Character 画面の実装（v1.2.8）');
+{
+  const { win } = await makeEnv(UA.android);
+
+  // --- 画面とボタンの存在 ---
+  check('Training 画面が存在する', !!win.document.getElementById('screen-training'));
+  check('Character 画面が存在する', !!win.document.getElementById('screen-character'));
+  check('Training 開始ボタンがある', !!win.document.getElementById('btn-training-start'));
+  check('Training 戻るボタンがある', !!win.document.getElementById('btn-training-back'));
+  check('Character 戻るボタンがある', !!win.document.getElementById('btn-character-back'));
+  check('練習中のラリーカウンタがある', !!win.document.getElementById('training-counter'));
+  check('Practice Rally のモード表示がある',
+    /Practice Rally/.test(win.document.getElementById('screen-training').textContent));
+
+  // --- 育成画面の必須項目 ---
+  const ch = win.document.getElementById('screen-character').textContent;
+  check('Experience が表示される', /Experience/i.test(ch));
+  check('Available Points が表示される', /Available Points/i.test(ch));
+  {
+    const src = await readFile(path.join(ROOT, 'js/ui/screens.js'), 'utf8');
+    check('能力4種の英語名が定義されている', ['Speed', 'Stamina', 'Shot Accuracy', 'Smash Power']
+      .every((n) => src.includes("'" + n + "'")), 'stat en');
+  }
+
+  // --- ソースレベルの静的確認（ログと入力経路）---
+  const scr = await readFile(path.join(ROOT, 'js/ui/screens.js'), 'utf8');
+  check("'Training initialized' を出力する", scr.includes("console.log('Training initialized')"));
+  check("'Character initialized' を出力する", scr.includes("console.log('Character initialized')"));
+  check("'Training button clicked' を出力する", scr.includes("'Training button clicked'"));
+  check("'Character button clicked' を出力する", scr.includes("'Character button clicked'"));
+  check('タップは pointerup / touchend でも発火する',
+    scr.includes("addEventListener('pointerup'") && scr.includes("addEventListener('touchend'"));
+  check('二重発火をガードしている', scr.includes('now - last < 400'));
+  check('＋ボタンはポイントを消費して保存する',
+    scr.includes('this.profile.upgrade(key)') && scr.includes('storage.saveProfile'));
+}
+
 console.log(`\n結果: ${failures === 0 ? `ALL PASS (${checks} checks)` : `${failures} FAILED / ${checks} checks`}\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -498,3 +498,22 @@
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* ---- v1.2.7: 開発者メニュー（既定は非表示） ---- */
+.dev-section[hidden] { display: none !important; }
+.dev-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(30, 136, 229, 0.28);
+}
+.dev-section__title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a9aa6;
+}
+.link-btn--muted { opacity: 0.75; }

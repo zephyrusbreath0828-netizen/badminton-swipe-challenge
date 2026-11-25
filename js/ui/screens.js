@@ -8,6 +8,14 @@ import { renderRanking } from './ranking.js';
 import { STAT_KEYS, STAT_META, PROFILE_CONFIG } from '../core/profile.js';
 import { deriveAbilities, fmtMul } from '../core/training.js';
 
+/** 能力の英語表記（要件: Speed / Stamina / Shot Accuracy / Smash Power） */
+const STAT_EN = {
+  speed: 'Speed',
+  stamina: 'Stamina',
+  accuracy: 'Shot Accuracy',
+  smash: 'Smash Power',
+};
+
 export class Screens {
   constructor({ game, storage, audio, hud, profile }) {
     this.game = game;
@@ -24,6 +32,7 @@ export class Screens {
       ranking: $('screen-ranking'),
       result: $('screen-result'),
       character: $('screen-character'),
+      training: $('screen-training'),
       tutorial: $('tutorial'),
       pause: $('overlay-pause'),
       statList: $('stat-list'),
@@ -34,6 +43,15 @@ export class Screens {
     this.syncHomeProfile();
     this.renderCharacter();
 
+    // 起動ログ（要件）
+    console.log('Training initialized');
+    console.log('Character initialized');
+
+    game.on('rally', (d) => {
+      const el = document.getElementById('training-rally-now');
+      if (el) el.textContent = String(d && typeof d.rally === 'number' ? d.rally : 0);
+    });
+
     game.on('state', (s) => this.onState(s));
     game.on('result', (r) => this.showResult(r));
     game.on('levelup', () => { /* ゲーム内レベル（スコア）用：HUDが担当 */ });
@@ -41,12 +59,17 @@ export class Screens {
 
   /* ---------------- 画面切替 ---------------- */
   show(name) {
+    if (name !== 'training') this.setTrainingCounter(false);
     if (name === 'home') {
       this.game.training = false;
       this.game.startDemo();
       this.syncHomeProfile();
     }
     if (name === 'character') this.renderCharacter();
+    if (name === 'training') {
+      this.renderTraining();
+      if (this.game && !this.game.demo) this.game.goHome();
+    }
     this.el.screens.forEach((s) => s.classList.toggle('is-active', s.dataset.screen === name));
     this.current = name;
     if (name !== 'result') this.el.result.classList.remove('is-active');
@@ -58,6 +81,22 @@ export class Screens {
   hideAll() {
     this.el.screens.forEach((s) => s.classList.remove('is-active'));
     this.current = null;
+    this.setTrainingCounter(false);
+  }
+
+  /** 練習中のラリーカウンタ表示切替 */
+  setTrainingCounter(on) {
+    const el = document.getElementById('training-counter');
+    if (!el) return;
+    el.hidden = !on;
+    el.setAttribute('aria-hidden', on ? 'false' : 'true');
+    if (on) {
+      el.removeAttribute('hidden');
+      const num = document.getElementById('training-rally-now');
+      if (num) num.textContent = String((this.game && this.game.rally) || 0);
+    } else {
+      el.setAttribute('hidden', '');
+    }
   }
 
   onState(s) {
@@ -101,17 +140,39 @@ export class Screens {
     };
 
     /* --- ホーム --- */
-    on('btn-start', 'click', tap(() => this.startGame()));
-    on('btn-training', 'click', tap(() => this.startTraining()));
-    on('btn-character', 'click', tap(() => this.show('character')));
-    on('btn-settings', 'click', tap(() => this.show('settings')));
-    on('btn-ranking', 'click', tap(() => {
+    /* タップ活性化: click が抑止される環境（pointer capture / scroll 判定）でも
+       pointerup・touchend で確実に発火する。二重発火は 400ms でガード。 */
+    const act = (id, fn, logMsg) => {
+      const el = $(id);
+      if (!el) return;
+      let last = 0;
+      const run = (e) => {
+        const now = Date.now();
+        if (now - last < 400) return;
+        last = now;
+        if (e && e.cancelable) { try { e.preventDefault(); } catch (err) { /* noop */ } }
+        if (logMsg) console.log(logMsg);
+        if (this.audio) { this.audio.unlock(); this.audio.ui(); }
+        try { fn(e); } catch (err) { console.error('handler error', id, err); }
+      };
+      el.addEventListener('click', run);
+      el.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') run(e); });
+      el.addEventListener('touchend', run, { passive: false });
+    };
+
+    act('btn-start', () => this.startGame());
+    act('btn-training', () => this.show('training'), 'Training button clicked');
+    act('btn-character', () => this.show('character'), 'Character button clicked');
+    act('btn-settings', () => this.show('settings'));
+    act('btn-ranking', () => {
       renderRanking($('ranking-list'), this.storage.ranking);
       this.show('ranking');
-    }));
-    on('btn-settings-back', 'click', tap(() => this.show('home')));
-    on('btn-ranking-back', 'click', tap(() => this.show('home')));
-    on('btn-character-back', 'click', tap(() => this.show('home')));
+    });
+    act('btn-training-start', () => this.startTraining());
+    act('btn-training-back', () => this.show('home'));
+    act('btn-settings-back', () => this.show('home'));
+    act('btn-ranking-back', () => this.show('home'));
+    act('btn-character-back', () => this.show('home'));
 
     /* --- 育成 --- */
     if (this.el.statList) {
@@ -214,9 +275,19 @@ export class Screens {
   }
 
   startTraining() {
-    this.hideAll();
     this.applyAbilities();
     this.game.startTraining();
+    this.hideAll();
+    this.setTrainingCounter(true);
+  }
+
+  /* ---------------- 練習画面 ---------------- */
+  renderTraining() {
+    const total = (this.storage.stats && this.storage.stats.bestRally) || 0;
+    const el = document.getElementById('training-best-rally');
+    if (el) el.textContent = String(total);
+    const plays = document.getElementById('training-plays');
+    if (plays) plays.textContent = String((this.storage.stats && this.storage.stats.plays) || 0);
   }
 
   /* ---------------- ホームのプレイヤー表示 ---------------- */
@@ -272,7 +343,7 @@ export class Screens {
         <div class="stat-row${isMax ? ' is-max' : ''}" data-key="${key}">
           <div class="stat-row__top">
             <span class="stat-row__icon">${meta.icon}</span>
-            <span class="stat-row__name">${meta.label}</span>
+            <span class="stat-row__name">${meta.label}<small class="stat-row__en">${STAT_EN[key] || ''}</small></span>
             <span class="stat-row__val">${val}<small>/${PROFILE_CONFIG.maxStat}</small></span>
           </div>
           <div class="stat-row__bar"><i style="width:${pct}%"></i></div>

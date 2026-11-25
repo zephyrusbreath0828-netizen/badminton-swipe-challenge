@@ -496,3 +496,86 @@
   font-weight: 700;
   line-height: 1.55;
 }
+
+/* ---- v1.2.8: Training 画面 / ラリーカウンタ / 育成の英語表記 ---- */
+.home-menu .menu-btn,
+.btn,
+.install-row,
+.link-btn,
+.mode-card { touch-action: manipulation; }
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(30, 136, 229, 0.35);
+  background: linear-gradient(100deg, rgba(30, 136, 229, 0.14), rgba(30, 136, 229, 0.04));
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mode-card__body { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
+.mode-card__title { font-size: 13px; font-weight: 900; }
+.mode-card__desc { font-size: 10.5px; color: #6d8492; line-height: 1.45; }
+.mode-card__check { font-size: 14px; font-weight: 900; color: #1e88e5; }
+
+.training-stats { display: flex; gap: 8px; }
+.training-stat {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 32, 0.05);
+  border: 1px solid rgba(15, 23, 32, 0.08);
+}
+.training-stat__label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7d909c;
+}
+.training-stat__value { font-size: 18px; font-weight: 900; }
+
+.training-counter {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 14px;
+  z-index: 8;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(6, 18, 27, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  pointer-events: none;
+}
+.training-counter[hidden] { display: none !important; }
+.training-counter__label { font-size: 8.5px; font-weight: 800; letter-spacing: 0.14em; opacity: 0.8; }
+.training-counter__num { font-size: 15px; font-weight: 900; }
+
+.stat-row__en {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #93a6b2;
+  text-transform: uppercase;
+}
+.char-exp__label {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7d909c;
+  margin-bottom: 3px;
+}

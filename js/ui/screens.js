@@ -46,6 +46,12 @@ export class Screens {
     // 起動ログ（要件）
     console.log('Training initialized');
     console.log('Character initialized');
+    // 実機で「どのビルドが動いているか」を判定するための1行
+    try {
+      const ctrl = navigator.serviceWorker && navigator.serviceWorker.controller;
+      console.log('Build ' + (window.__BUILD__ || 'unknown')
+        + ' / SW ' + (ctrl ? (ctrl.scriptURL || '').split('/').pop() : 'no-controller'));
+    } catch (e) { /* noop */ }
 
     game.on('rally', (d) => {
       const el = document.getElementById('training-rally-now');
@@ -57,6 +63,69 @@ export class Screens {
     game.on('levelup', () => { /* ゲーム内レベル（スコア）用：HUDが担当 */ });
   }
 
+
+  /* ---------------- Debug パネル（v1.2.9） ---------------- */
+  /** ボタンが「存在 + リスナー登録済み」なら Connected */
+  debugRows() {
+    const ids = [
+      ['btn-start', 'Play Button'],
+      ['btn-training', 'Training Button'],
+      ['btn-character', 'Character Button'],
+      ['btn-settings', 'Settings Button'],
+    ];
+    return ids.map(([id, label]) => {
+      const el = document.getElementById(id);
+      const wired = !!(this._acts && this._acts[id]);
+      const exists = !!el;
+      return {
+        id,
+        label,
+        exists,
+        wired,
+        connected: exists && wired,
+        state: exists && wired ? 'Connected' : 'Missing',
+        tag: el ? `${el.tagName.toLowerCase()}${el.dataset.wired === '1' ? '[wired]' : ''}` : '-',
+      };
+    });
+  }
+
+  syncDebugPanel() {
+    const list = document.getElementById('debug-list');
+    if (!list) return;
+    const rows = this.debugRows();
+    list.innerHTML = rows.map((r) => `
+      <div class="debug-row" data-ok="${r.connected ? '1' : '0'}">
+        <span class="debug-row__label">${r.label}:</span>
+        <span class="debug-row__value">${r.state}</span>
+        <span class="debug-row__meta">${r.id} ${r.tag}</span>
+      </div>`).join('');
+
+    const info = document.getElementById('debug-info');
+    if (info) {
+      const ctrl = (() => {
+        try { return navigator.serviceWorker && navigator.serviceWorker.controller; } catch (e) { return null; }
+      })();
+      info.textContent = [
+        `build: ${window.__BUILD__ || 'unknown'}`,
+        `sw: ${ctrl ? (ctrl.scriptURL || '').split('/').pop() : 'no-controller'}`,
+        `last: ${this._lastEvent || 'none'}`,
+        `screens: ${this.current || '-'}`,
+      ].join('\n');
+    }
+  }
+
+  toggleDebug(force) {
+    const panel = document.getElementById('debug-panel');
+    const btn = document.getElementById('btn-debug');
+    if (!panel) return;
+    const on = typeof force === 'boolean' ? force : panel.hidden;
+    panel.hidden = !on;
+    if (on) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
+    panel.setAttribute('aria-hidden', on ? 'false' : 'true');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) this.syncDebugPanel();
+  }
+
   /* ---------------- 画面切替 ---------------- */
   show(name) {
     if (name !== 'training') this.setTrainingCounter(false);
@@ -64,6 +133,7 @@ export class Screens {
       this.game.training = false;
       this.game.startDemo();
       this.syncHomeProfile();
+      this.syncDebugPanel();
     }
     if (name === 'character') this.renderCharacter();
     if (name === 'training') {
@@ -140,36 +210,71 @@ export class Screens {
     };
 
     /* --- ホーム --- */
-    /* タップ活性化: click が抑止される環境（pointer capture / scroll 判定）でも
-       pointerup・touchend で確実に発火する。二重発火は 400ms でガード。 */
+    /* ------------------------------------------------------------------
+       タップ活性化（v1.2.9）
+       click が抑止される環境でも確実に発火させるため
+         1) 要素へ click / pointerup / touchend を直接登録
+         2) document の捕捉フェーズにも委譲（ノード差し替え・capture 対策）
+       二重発火は 400ms のガードで防ぐ。配線状況は Debug パネルで確認できる。
+       ------------------------------------------------------------------ */
+    this._acts = this._acts || {};
+    this._last = this._last || {};
+
     const act = (id, fn, logMsg) => {
       const el = $(id);
-      if (!el) return;
-      let last = 0;
-      const run = (e) => {
+      const run = (e, meta) => {
         const now = Date.now();
-        if (now - last < 400) return;
-        last = now;
+        if (now - (this._last[id] || 0) < 400) return;
+        this._last[id] = now;
+        // 押下ログは最優先（例外より前）
+        if (logMsg) {
+          try { console.log(logMsg); } catch (err) { /* noop */ }
+        }
+        this._lastEvent = `${id} (${(meta && meta.type) || (e && e.type) || 'unknown'})`;
+        this.syncDebugPanel();
         if (e && e.cancelable) { try { e.preventDefault(); } catch (err) { /* noop */ } }
-        if (logMsg) console.log(logMsg);
-        if (this.audio) { this.audio.unlock(); this.audio.ui(); }
-        try { fn(e); } catch (err) { console.error('handler error', id, err); }
+        if (this.audio) { try { this.audio.unlock(); this.audio.ui(); } catch (err) { /* noop */ } }
+        try {
+          fn(e);
+        } catch (err) {
+          console.error('[tap] handler failed:', id, err && err.message);
+          if (this.hud) this.hud.pushToast('操作に失敗しました', 'warn');
+        }
       };
-      el.addEventListener('click', run);
-      el.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') run(e); });
-      el.addEventListener('touchend', run, { passive: false });
+      this._acts[id] = run;
+      if (!el) return;
+      el.addEventListener('click', (e) => run(e, { type: 'click' }));
+      el.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') run(e, { type: 'pointerup:' + e.pointerType }); });
+      el.addEventListener('touchend', (e) => run(e, { type: 'touchend' }), { passive: false });
+      el.dataset.wired = '1';
     };
 
-    act('btn-start', () => this.startGame());
+    // 委譲（捕捉フェーズ）: 直接リスナーが効かない環境の保険
+    if (!this._delegated) {
+      this._delegated = true;
+      const HANDLED = ['btn-start', 'btn-training', 'btn-character', 'btn-settings'];
+      const fire = (e, type) => {
+        const t = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (!t || !t.id || HANDLED.indexOf(t.id) === -1) return;
+        const fn = this._acts && this._acts[t.id];
+        if (fn) fn(e, { type: 'delegated:' + type });
+      };
+      document.addEventListener('click', (e) => fire(e, 'click'), true);
+      document.addEventListener('touchend', (e) => fire(e, 'touchend'), true);
+    }
+
+    act('btn-start', () => this.startGame(), 'Play button clicked');
     act('btn-training', () => this.show('training'), 'Training button clicked');
     act('btn-character', () => this.show('character'), 'Character button clicked');
-    act('btn-settings', () => this.show('settings'));
+    act('btn-settings', () => this.show('settings'), 'Settings button clicked');
     act('btn-ranking', () => {
       renderRanking($('ranking-list'), this.storage.ranking);
       this.show('ranking');
     });
     act('btn-training-start', () => this.startTraining());
     act('btn-training-back', () => this.show('home'));
+    act('btn-debug', () => this.toggleDebug(), 'Debug button clicked');
+    act('btn-debug-close', () => this.toggleDebug(false));
     act('btn-settings-back', () => this.show('home'));
     act('btn-ranking-back', () => this.show('home'));
     act('btn-character-back', () => this.show('home'));

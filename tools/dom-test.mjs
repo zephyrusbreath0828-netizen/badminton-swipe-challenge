@@ -597,9 +597,28 @@ console.log('\n[9] Training / Character 画面の実装（v1.2.8）');
   check("'Character button clicked' を出力する", scr.includes("'Character button clicked'"));
   check('タップは pointerup / touchend でも発火する',
     scr.includes("addEventListener('pointerup'") && scr.includes("addEventListener('touchend'"));
-  check('二重発火をガードしている', scr.includes('now - last < 400'));
+  check('二重発火をガードしている', /now - \(this\._last\[id\] \|\| 0\) < 400/.test(scr));
   check('＋ボタンはポイントを消費して保存する',
     scr.includes('this.profile.upgrade(key)') && scr.includes('storage.saveProfile'));
+}
+
+console.log('\n[10] Debug パネル / 配線レジストリ（v1.2.9）');
+{
+  const { win } = await makeEnv(UA.android);
+  const dbg = win.document.getElementById('btn-debug');
+  const panel = win.document.getElementById('debug-panel');
+  check('ホーム右下に Debug ボタンがある', !!dbg);
+  check('Debug パネルは既定で非表示', panel.hidden === true);
+  check('デバッグ行のコンテナがある', !!win.document.getElementById('debug-list'));
+  check('ビルド識別子が埋め込まれている', /__BUILD__\s*=/.test(HTML));
+
+  const scr = await readFile(path.join(ROOT, 'js/ui/screens.js'), 'utf8');
+  check('配線レジストリ _acts を持つ', scr.includes('this._acts[id] = run'));
+  check('dataset.wired で登録済みを記録する', scr.includes("el.dataset.wired = '1'"));
+  check('document 委譲（捕捉フェーズ）を実装', scr.includes("document.addEventListener('click', (e) => fire(e, 'click'), true)"));
+  check('Connected/Missing を判定する', scr.includes("'Connected' : 'Missing'"));
+  check('Play/Settings にも押下ログがある',
+    scr.includes("'Play button clicked'") && scr.includes("'Settings button clicked'"));
 }
 
 console.log(`\n結果: ${failures === 0 ? `ALL PASS (${checks} checks)` : `${failures} FAILED / ${checks} checks`}\n`);

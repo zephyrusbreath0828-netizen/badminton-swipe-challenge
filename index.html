@@ -73,10 +73,22 @@ window.addEventListener('appinstalled', function () {
       <strong class="training-counter__num" id="training-rally-now">0</strong>
     </div>
 
+
+    <!-- ============ Debug（v1.2.9 / ホーム右下） ============ -->
+    <div class="debug-panel" id="debug-panel" hidden aria-hidden="true">
+      <div class="debug-panel__head">
+        <span class="debug-panel__title">Debug / Button Wiring</span>
+        <button class="debug-panel__close" id="btn-debug-close" type="button" aria-label="閉じる">✕</button>
+      </div>
+      <div class="debug-list" id="debug-list"><!-- JSが生成 --></div>
+      <pre class="debug-info" id="debug-info">build: -</pre>
+      <p class="debug-panel__note">Missing の場合、ボタン要素が見つからないかリスナー未登録です。</p>
+    </div>
+
     <!-- ============ ホーム ============ -->
     <section class="screen screen--home" data-screen="home" id="screen-home">
       <div class="home__top">
-        <p class="kicker">SPORTS ARCADE — v1.2.8</p>
+        <p class="kicker">SPORTS ARCADE — v1.2.9</p>
         <h1 class="hero no-swipe" id="app-title">
           <span class="hero__small">Badminton</span>
           <span class="hero__big">Shuttle</span>
@@ -137,6 +149,7 @@ window.addEventListener('appinstalled', function () {
           </div>
         </div>
         <p class="footnote">画面をスワイプしてラケットを振る／移動は自動</p>
+        <button class="debug-fab" id="btn-debug" type="button" aria-pressed="false" aria-label="Debug">Debug</button>
       </div>
     </section>
 
@@ -1069,6 +1082,7 @@ window.addEventListener('appinstalled', function () {
   });
 })();
 </script>
+<script>window.__BUILD__ = '1.2.9';</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -579,3 +579,64 @@
   color: #7d909c;
   margin-bottom: 3px;
 }
+
+/* ---- v1.2.9: Debug ボタン / パネル ---- */
+.debug-fab {
+  position: absolute;
+  right: 14px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(6, 18, 27, 0.62);
+  color: #eaf3f8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  touch-action: manipulation;
+  z-index: 9;
+}
+.debug-fab[aria-pressed="true"] { background: rgba(30, 136, 229, 0.9); border-color: rgba(30, 136, 229, 0.9); }
+
+.debug-panel {
+  position: absolute;
+  right: 10px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 46px);
+  width: min(300px, calc(100% - 20px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(8, 20, 28, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  color: #eaf3f8;
+}
+.debug-panel[hidden] { display: none !important; }
+.debug-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.debug-panel__title { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; opacity: 0.85; }
+.debug-panel__close { background: none; border: 0; color: #cfe2ec; font-size: 13px; cursor: pointer; padding: 2px 4px; }
+.debug-list { display: flex; flex-direction: column; gap: 4px; }
+.debug-row { display: flex; align-items: baseline; gap: 5px; font-family: ui-monospace, monospace; font-size: 10.5px; }
+.debug-row__label { color: #b9cfdb; }
+.debug-row__value { font-weight: 800; }
+.debug-row[data-ok="1"] .debug-row__value { color: #38e0a8; }
+.debug-row[data-ok="0"] .debug-row__value { color: #ff8a7a; }
+.debug-row__meta { margin-left: auto; font-size: 9px; color: #77909e; }
+.debug-info {
+  margin: 2px 0 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: #cfe2ec;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.debug-panel__note { font-size: 9px; color: #8ba4b2; line-height: 1.4; }

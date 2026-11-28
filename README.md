@@ -3,7 +3,7 @@
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
 v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で PWA診断が全項目「-」になる不具合を修正。v1.2.3 で `deferredPrompt` の保持を修正。v1.2.4 で **設定画面のインストールボタンが無反応になる不具合**を修正しました。
 
-- バージョン: **v1.2.8**
+- バージョン: **v1.2.9**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,60 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA
 
 
 ---
+
+## v1.2.9 実装状況レポート（Training / Character）
+
+### 調査方法
+
+1. `index.html` の DOM 構造・要素ID を静的確認
+2. `js/ui/screens.js` の `bind()` を静的確認（リスナー登録・実行関数）
+3. **配布 ZIP をそのまま実 Chromium（HTTPS 配信 / 420px）で起動**し、各ボタンを順にクリックして `screens.current` と `.is-active` を実測
+
+### Training
+
+| # | 調査項目 | 結果 |
+|---|---|---|
+| 1 | 画面が存在するか | **YES**（`#screen-training` / `.screen.screen--panel`） |
+| 2 | HTML要素ID | 画面 `screen-training`、開始 `btn-training-start`、戻る `btn-training-back`、ホーム導線 `btn-training`、カウンタ `training-counter` / `training-rally-now` |
+| 3 | JavaScriptファイル名 | `js/ui/screens.js`（配線・描画）、`js/game.js`（`startTraining()` / 練習中の再開処理） |
+| 4 | イベントリスナー登録有無 | **あり** — `click` / `pointerup`(touch) / `touchend` の3経路 ＋ document 委譲（捕捉） |
+| 5 | クリック時実行関数 | `this.show('training')` → `renderTraining()`。開始ボタンは `this.startTraining()` |
+| 6 | 遷移先画面名 | `training`（`data-screen="training"`） |
+| 7 | ボタン押下ログ | **あり** `console.log('Training button clicked')` |
+
+### Character
+
+| # | 調査項目 | 結果 |
+|---|---|---|
+| 1 | 画面が存在するか | **YES**（`#screen-character`） |
+| 2 | HTML要素ID | 画面 `screen-character`、戻る `btn-character-back`、ホーム導線 `btn-character`、能力リスト `stat-list`、Lv `char-level`、EXP `char-exp-text`、ポイント `char-points` |
+| 3 | JavaScriptファイル名 | `js/ui/screens.js`（`renderCharacter()` / `upgrade()`）、`js/core/profile.js`（`PlayerProfile` / `PROFILE_CONFIG` / `STAT_META`）、`js/core/storage.js`（`saveProfile`） |
+| 4 | イベントリスナー登録有無 | **あり** — `click` / `pointerup` / `touchend` ＋ document 委譲（捕捉） |
+| 5 | クリック時実行関数 | `this.show('character')` → `renderCharacter()`。＋は `this.upgrade(key)`（`profile.upgrade` → `storage.saveProfile`） |
+| 6 | 遷移先画面名 | `character`（`data-screen="character"`） |
+| 7 | ボタン押下ログ | **あり** `console.log('Character button clicked')` |
+
+### 実測結果（配布 ZIP / 実 Chromium）
+
+```
+click btn-training  → current=training   active: screen-training:ON
+click btn-character → current=character  active: screen-character:ON
+```
+
+**コード上の欠落は無し。** 画面・ID・リスナー・遷移・ログのすべてが実装済みで、ヘッドレス Chromium 上では両方とも遷移します。したがって実機で反応しない場合は、コードではなく次のいずれかです。
+
+| 候補 | 見分け方 |
+|---|---|
+| **A. 古い Service Worker キャッシュ**（インストール済みアプリが旧 JS を実行） | 起動ログの `Build 1.2.9 / SW service-worker.js` と、ホームの `SPORTS ARCADE — v1.2.9` の一致を確認。Debug パネルの `build:` / `sw:` 行でも判別可 |
+| **B. 入力経路の抑止**（`pointerdown` 後の `setPointerCapture` / スクロール判定で `click` が落ちる） | Debug パネルの `last:` 行が `none` のままなら JS にタップが届いていない。`btn-training (touchend)` 等が出れば届いている |
+
+### 追加した計測器（v1.2.9）
+
+- **ホーム右下「Debug」ボタン** → 4ボタンの `Connected` / `Missing`、`build`、`sw`、最後に受けた入力（`last`）を表示
+- 押下ログを4ボタンすべてに追加（`Play/Training/Character/Settings button clicked`）
+- `Build <version> / SW <script>` を起動時に出力
+- document 捕捉フェーズへの委譲を追加（要素側のリスナーが効かない環境でも発火）
+- ハンドラ内例外を `console.error('[tap] handler failed: ...')` として出力
 
 ## v1.2.8 の変更点（Training / Character が反応しない）
 
@@ -647,6 +701,7 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.2.9** | **Training/Character 実装状況レポート / Debug ボタン（Connected判定）/ 押下ログ4種 / 委譲フォールバック** |
 | **v1.2.8** | **Training/Character 無反応の修正（クリック以外の入力経路）/ Training画面 / 育成の英語表記** |
 | **v1.2.7** | **開発者メニューを5連打で解禁 / 設定からPWA診断を隠す** |
 | **v1.2.6** | **診断モーダルの自動表示を廃止（ホーム→Play優先）** |

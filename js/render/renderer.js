@@ -431,20 +431,30 @@ export class Renderer {
     // 軌跡
     this.drawShuttleTrail(ctx, game);
 
-    // 向き（速度ベクトル）
+    /* 向き（v1.2.10）
+       3D の速度ベクトル (vx, vy, vz) をスクリーン座標へ投影し、
+       atan2(velocityY, velocityX) で進行方向の角度を求める。
+       ローカル座標は「コルク＝原点 / フェザー＝-Y 方向」なので、
+       ang - 90° 回転させるとコルクが進行方向を向き、フェザーが後方へ流れる。 */
     let ang = -Math.PI / 2;
     if (s.inFlight) {
       const v = s.vel;
       const a = cam.project(s.pos.x, s.pos.y, s.pos.z);
       const b = cam.project(s.pos.x + v.x * 0.04, s.pos.y + v.y * 0.04, s.pos.z + v.z * 0.04);
-      if (Math.hypot(b.x - a.x, b.y - a.y) > 0.5) {
-        ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      // ほぼ静止（頂点付近）では直前の角度を保持してチラつきを防ぐ
+      if (Math.hypot(dx, dy) > 0.5) {
+        this._shuttleAng = Math.atan2(dy, dx);
       }
+      if (typeof this._shuttleAng === 'number') ang = this._shuttleAng;
+    } else {
+      this._shuttleAng = undefined;   // ホールド時はリセット
     }
 
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(ang + Math.PI / 2);
+    ctx.rotate(ang - Math.PI / 2);
 
     // 羽（コーン）
     const g = ctx.createLinearGradient(0, -size * 1.8, 0, 0);

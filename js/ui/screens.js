@@ -599,7 +599,7 @@ export class Screens {
         banner.classList.remove('is-on');
         void banner.offsetWidth;
         banner.classList.add('is-on');
-        setTimeout(() => banner.classList.remove('is-on'), 2000);
+        setTimeout(() => banner.classList.remove('is-on'), 1500);
       }
       if (this.audio) this.audio.levelUp();
       this.hud.pushToast(`Lv.${this.profile.level} にアップ！ +${PROFILE_CONFIG.levelUpPoints * reward.levels}pt`, 'level');

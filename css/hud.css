@@ -168,23 +168,38 @@
 /* ---------------- レベルアップ ---------------- */
 .level-banner {
   position: absolute;
-  top: 46%;
+  top: calc(env(safe-area-inset-top, 0px) + 62px);   /* v1.2.10: 画面上部へ固定 */
   left: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 12px 26px;
-  border-radius: 18px;
-  background: linear-gradient(100deg, rgba(126, 232, 250, 0.95), rgba(22, 199, 154, 0.95));
-  color: #04222e;
-  box-shadow: 0 16px 34px rgba(6, 40, 52, 0.45);
+  flex-direction: row;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: rgba(8, 30, 42, 0.55);
+  border: 1px solid rgba(126, 232, 250, 0.45);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  color: #eaf6fb;
+  box-shadow: 0 8px 20px rgba(4, 20, 30, 0.26);
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.7);
+  pointer-events: none;          /* プレイを妨げない */
+  transform: translate(-50%, -10px) scale(0.96);
+  z-index: 9;
 }
-.level-banner.is-on { animation: bannerPop 1.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.level-banner__num { font-size: 20px; font-weight: 900; letter-spacing: 0.02em; }
-.level-banner__label { font-size: 10px; font-weight: 800; letter-spacing: 0.14em; opacity: 0.7; }
+.level-banner.is-on { animation: levelBannerTop 1.5s ease both; }
+.level-banner__num { font-size: 14px; font-weight: 900; letter-spacing: 0.02em; }
+.level-banner__label { font-size: 8.5px; font-weight: 800; letter-spacing: 0.16em; opacity: 0.62; }
+
+/* 上部固定 → 1.5秒で自動フェードアウト */
+@keyframes levelBannerTop {
+  0%   { opacity: 0; transform: translate(-50%, -12px) scale(0.94); }
+  12%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  72%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -10px) scale(0.98); }
+}
 
 /* ---------------- 下部 ---------------- */
 .hud__bottom {

@@ -97,15 +97,29 @@ export class Hud {
     this.calloutTimer = 1.4;
   }
 
+  /**
+   * レベルアップ通知（v1.2.10）
+   * 画面中央を塞がないよう上部固定・半透明・1.5秒で自動フェードアウト。
+   * pointer-events: none なのでプレイを止めない。
+   */
   showLevelUp(level) {
     const b = this.el.banner;
-    if (b) {
-      b.querySelector('.level-banner__num').textContent = `LEVEL ${level}`;
+    if (!b) return;
+    const num = b.querySelector('.level-banner__num');
+    const label = b.querySelector('.level-banner__label');
+    if (num) num.textContent = `Lv.${level} にレベルアップ！`;
+    if (label) label.textContent = 'LEVEL UP';
+
+    b.classList.remove('is-on');
+    void b.offsetWidth;                    // アニメーション再生のリセット
+    b.classList.add('is-on');
+    b.setAttribute('aria-hidden', 'false');
+
+    clearTimeout(this._levelTimer);
+    this._levelTimer = setTimeout(() => {
       b.classList.remove('is-on');
-      void b.offsetWidth;
-      b.classList.add('is-on');
-    }
-    this.pushToast(`LEVEL ${level} にアップ！`, 'level');
+      b.setAttribute('aria-hidden', 'true');
+    }, 1500);
   }
 
   pushToast(text, tone = 'normal') {

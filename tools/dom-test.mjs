@@ -621,5 +621,73 @@ console.log('\n[10] Debug パネル / 配線レジストリ（v1.2.9）');
     scr.includes("'Play button clicked'") && scr.includes("'Settings button clicked'"));
 }
 
+console.log('\n[12] アバター（v1.3.0）');
+{
+  const av = await import(`${path.join(ROOT, 'js/core/avatar.js')}?a=${Math.random()}`);
+  const prof = await import(`${path.join(ROOT, 'js/core/profile.js')}?p=${Math.random()}`);
+
+  const d = av.normalizeAvatar();
+  check('既定のアバター設定', d.playerName === 'Player1' && d.height === 172 && d.bodyType === 'Normal',
+    JSON.stringify(d));
+  check('不正値はクランプ/フォールバック', (() => {
+    const x = av.normalizeAvatar({ height: 999, bodyType: 'Huge', faceType: 'Face99', hairStyle: 'Spiky', hairColor: 'Green', playerName: '  ' });
+    return x.height === 200 && x.bodyType === 'Normal' && x.faceType === 'Face01'
+      && x.hairStyle === 'Short' && x.hairColor === 'Black' && x.playerName === 'Player1';
+  })());
+  check('名前は12文字まで', av.sanitizeName('abcdefghijklmnop').length === 12, av.sanitizeName('abcdefghijklmnop'));
+  check('顔は5種 / 髪型5種 / 髪色5種 / 体格3種',
+    av.FACE_TYPES.length === 5 && av.HAIR_STYLES.length === 5 && av.HAIR_COLORS.length === 5 && av.BODY_TYPES.length === 3);
+  check('◀ で循環する', av.cycle(av.FACE_TYPES, 'Face01', -1) === 'Face05', av.cycle(av.FACE_TYPES, 'Face01', -1));
+
+  const base = { speed: 50, stamina: 50, accuracy: 50, smash: 50 };
+  const slim = av.avatarAdjustedStats(base, { bodyType: 'Slim' });
+  check('Slim: Speed +10 / Smash -5', slim.speed === 60 && slim.smash === 45, JSON.stringify(slim));
+  const power = av.avatarAdjustedStats(base, { bodyType: 'Power' });
+  check('Power: Speed -5 / Smash +10', power.speed === 45 && power.smash === 60, JSON.stringify(power));
+  const normal = av.avatarAdjustedStats(base, { bodyType: 'Normal', height: 175 });
+  check('Normal: 補正なし', normal.speed === 50 && normal.smash === 50, JSON.stringify(normal));
+  const short = av.avatarAdjustedStats(base, { bodyType: 'Normal', height: 165 });
+  check('170cm未満は Speed +3', short.speed === 53, String(short.speed));
+  check('180cm以上は打点 +5%', av.avatarReachBonus({ height: 182 }) === 0.05 && av.avatarReachBonus({ height: 175 }) === 0);
+  check('補正は 0..100 に収まる',
+    av.avatarAdjustedStats({ speed: 100, smash: 0 }, { bodyType: 'Slim' }).speed === 100
+    && av.avatarAdjustedStats({ smash: 0 }, { bodyType: 'Slim' }).smash === 0);
+
+  // 保存 → 復元
+  const st = new (await import(`${path.join(ROOT, 'js/core/storage.js')}?s=${Math.random()}`)).Storage();
+  const p1 = new prof.PlayerProfile(null);
+  p1.avatar = av.normalizeAvatar({ playerName: 'Tomotaka', faceType: 'Face03', hairStyle: 'Ponytail', hairColor: 'Blue', handedness: 'left', height: 186, bodyType: 'Power' });
+  st.saveProfile(p1.toJSON());
+  const restored = new prof.PlayerProfile(new (await import(`${path.join(ROOT, 'js/core/storage.js')}?s2=${Math.random()}`)).Storage().profile);
+  check('アバターが localStorage から復元される',
+    restored.avatar.playerName === 'Tomotaka' && restored.avatar.faceType === 'Face03'
+    && restored.avatar.hairStyle === 'Ponytail' && restored.avatar.hairColor === 'Blue'
+    && restored.avatar.handedness === 'left' && restored.avatar.height === 186
+    && restored.avatar.bodyType === 'Power', JSON.stringify(restored.avatar));
+
+  // --- 画面マークアップ ---
+  const doc = new JSDOM(HTML).window.document;
+  check('Avatar Editor のキャンバスがある', !!doc.getElementById('avatar-canvas'));
+  check('プレイヤー名入力がある', !!doc.getElementById('avatar-name'));
+  check('目・髪型・髪色の ◀▶ 行がある', doc.querySelectorAll('#avatar-rows [data-field]').length === 3);
+  const handBtns = doc.querySelectorAll('#avatar-hand [data-hand]');
+  check('利き手の選択がある', handBtns.length === 2, String(handBtns.length));
+  const rangeEl = doc.getElementById('avatar-height');
+  check('身長スライダーが 160-200',
+    !!rangeEl && rangeEl.getAttribute('min') === '160' && rangeEl.getAttribute('max') === '200');
+  check('体格3種のボタンがある', doc.querySelectorAll('#avatar-body [data-body]').length === 3);
+  check('ポーズ5種がある（Idle/Walk/Forehand/Backhand/Smash）',
+    ['idle', 'walk', 'forehand', 'backhand', 'smash']
+      .every((pose) => !!doc.querySelector(`[data-pose="${pose}"]`)));
+  check('能力プレビューがある', !!doc.getElementById('avatar-ability-list'));
+  check('保存ボタンがある', !!doc.getElementById('btn-avatar-save'));
+
+  const scr = await readFile(path.join(ROOT, 'js/ui/screens.js'), 'utf8');
+  check('保存で localStorage へ書き込む', scr.includes('this.storage.saveProfile(this.profile.toJSON())'));
+  check('ドラッグ回転を実装', scr.includes("canvas.addEventListener('pointermove'"));
+  check('アバター補正を能力へ適用', scr.includes('avatarAdjustedStats(this.profile.stats, this.profile.avatar)'));
+  check('レンダラへアバターを渡す', scr.includes('this.renderer.setAvatar'));
+}
+
 console.log(`\n結果: ${failures === 0 ? `ALL PASS (${checks} checks)` : `${failures} FAILED / ${checks} checks`}\n`);
 process.exit(failures === 0 ? 0 : 1);

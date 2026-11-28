@@ -74,7 +74,7 @@ export function drawCharacter(ctx, o) {
 
   ctx.save();
   ctx.translate(o.sx, o.sy);
-  ctx.scale(s, -s); // 以降はメートル単位・y上向き
+  ctx.scale(s * (o.bodyScale || 1), -s); // 以降はメートル単位・y上向き
 
   // 接地位置の補正（バウンド）
   ctx.translate(0, bounce);

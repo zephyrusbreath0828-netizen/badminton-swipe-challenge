@@ -5,6 +5,7 @@
 import { CONFIG } from '../config.js';
 import { clamp, makeRng, TAU, easeOutCubic } from '../core/math.js';
 import { drawCharacter, PALETTES } from './character.js';
+import { normalizeAvatar, HAIR_COLOR_HEX, bodyWidthScale, bodyHeightScale } from '../core/avatar.js';
 
 const COURT = CONFIG.court;
 const NET_Z = COURT.netZ;
@@ -18,6 +19,26 @@ export class Renderer {
     this.height = 0;
     this.crowd = null;
     this.stars = null;
+    this.avatar = null;      // v1.3.0: アバター設定（null なら既定）
+  }
+
+  /** アバター設定を反映（v1.3.0） */
+  setAvatar(avatar) {
+    this.avatar = avatar ? normalizeAvatar(avatar) : null;
+  }
+
+  /** アバターの髪色・体格を反映したプレイヤーパレット */
+  playerPalette() {
+    const base = PALETTES.player;
+    if (!this.avatar) return base;
+    const hair = HAIR_COLOR_HEX[this.avatar.hairColor] || HAIR_COLOR_HEX.Black;
+    const body = this.avatar.bodyType;
+    const shirt = body === 'Slim'
+      ? { shirt: '#38b6ff', shirtDark: '#1d86c4', shirtLight: '#9fdcff' }
+      : body === 'Power'
+        ? { shirt: '#7c5cff', shirtDark: '#5b3fd6', shirtLight: '#c0b0ff' }
+        : { shirt: base.shirt, shirtDark: base.shirtDark, shirtLight: base.shirtLight };
+    return Object.assign({}, base, shirt, { hair: hair.base, hairHi: hair.hi });
   }
 
   resize(width, height, dpr = 1) {
@@ -110,15 +131,16 @@ export class Renderer {
     drawCharacter(ctx, {
       sx: pp.x,
       sy: pp.y,
-      scale: pp.s,
-      palette: PALETTES.player,
+      scale: pp.s * (this.avatar ? bodyHeightScale(this.avatar) : 1),
+      bodyScale: this.avatar ? bodyWidthScale(this.avatar) : 1,
+      palette: this.playerPalette(),
       runPhase: game.player.runPhase,
       moving: game.player.speed > 0.5,
       swingT: game.player.swingT,
       swingKind: game.player.swingKind,
       swingActive: game.player.swingActive,
       isAI: false,
-      handSign: game.player.handedness === 'right' ? 1 : -1,
+      handSign: (this.avatar ? this.avatar.handedness : game.player.handedness) === 'right' ? 1 : -1,
       reachGlow: game.canHit ? 0.6 + Math.sin(t * 12) * 0.4 : 0,
     });
 

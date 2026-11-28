@@ -8,7 +8,7 @@
    ・旧バージョンのキャッシュは activate で削除
    ================================================================= */
 
-const VERSION = '1.2.10';
+const VERSION = '1.3.0';
 const CACHE_NAME = `shuttle-smash-${VERSION}`;
 const LEGACY_PREFIXES = ['bsc-', 'shuttle-smash-'];
 
@@ -42,7 +42,9 @@ const PRECACHE_ASSETS = [
   './js/core/storage.js',
   './js/core/profile.js',
   './js/core/training.js',
+  './js/core/avatar.js',
   './js/render/renderer.js',
+  './js/render/avatar3d.js',
   './js/render/character.js',
   './js/ui/hud.js',
   './js/ui/screens.js',

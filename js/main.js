@@ -21,11 +21,12 @@ const storage = new Storage();
 const profile = new PlayerProfile(storage.profile);   // 育成データ（localStorage から復元）
 const game = new Game({ settings: storage.settings, audio, storage });
 const hud = new Hud(game, storage);
-const screens = new Screens({ game, storage, audio, hud, profile });
+const screens = new Screens({ game, storage, audio, hud, profile, renderer });
 
 audio.setEnabled(storage.settings.sound);
 game.setSettings(storage.settings);
-screens.applyAbilities();   // 育成値を初期状態から適用
+renderer.setAvatar(profile.avatar);   // v1.3.0: アバターをゲーム内の選手へ反映
+screens.applyAbilities();             // 育成値＋アバター補正を初期状態から適用
 
 /* ------------------------------------------------------------------ */
 /* レイアウト                                                          */

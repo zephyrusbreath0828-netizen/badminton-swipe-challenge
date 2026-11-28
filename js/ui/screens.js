@@ -7,6 +7,12 @@
 import { renderRanking } from './ranking.js';
 import { STAT_KEYS, STAT_META, PROFILE_CONFIG } from '../core/profile.js';
 import { deriveAbilities, fmtMul } from '../core/training.js';
+import {
+  FACE_TYPES, HAIR_STYLES, HAIR_COLORS, BODY_TYPES,
+  normalizeAvatar, sanitizeName, cycle,
+  avatarAdjustedStats, avatarReachBonus, avatarBonusNotes,
+} from '../core/avatar.js';
+import { drawAvatar } from '../render/avatar3d.js';
 
 /** 能力の英語表記（要件: Speed / Stamina / Shot Accuracy / Smash Power） */
 const STAT_EN = {
@@ -17,13 +23,19 @@ const STAT_EN = {
 };
 
 export class Screens {
-  constructor({ game, storage, audio, hud, profile }) {
+  constructor({ game, storage, audio, hud, profile, renderer = null }) {
     this.game = game;
     this.storage = storage;
     this.audio = audio;
     this.hud = hud;
     this.profile = profile;
+    this.renderer = renderer;
     this.current = null;
+    // アバター編集（v1.3.0）
+    this.avatarDraft = normalizeAvatar(profile.avatar);
+    this.avatarYaw = -0.4;
+    this.avatarPose = 'idle';
+    this._avRAF = null;
 
     const $ = (id) => document.getElementById(id);
     this.el = {
@@ -129,6 +141,7 @@ export class Screens {
   /* ---------------- 画面切替 ---------------- */
   show(name) {
     if (name !== 'training') this.setTrainingCounter(false);
+    if (name !== 'character') this.stopAvatarPreview();
     if (name === 'home') {
       this.game.training = false;
       this.game.startDemo();
@@ -273,11 +286,96 @@ export class Screens {
     });
     act('btn-training-start', () => this.startTraining());
     act('btn-training-back', () => this.show('home'));
+    act('btn-avatar-save', () => this.saveAvatar(), 'Avatar save clicked');
     act('btn-debug', () => this.toggleDebug(), 'Debug button clicked');
     act('btn-debug-close', () => this.toggleDebug(false));
     act('btn-settings-back', () => this.show('home'));
     act('btn-ranking-back', () => this.show('home'));
     act('btn-character-back', () => this.show('home'));
+
+    /* --- アバター編集の操作 --- */
+    const canvas = document.getElementById('avatar-canvas');
+    if (canvas) {
+      let drag = null;
+      canvas.addEventListener('pointerdown', (e) => {
+        drag = { x: e.clientX, yaw: this.avatarYaw };
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const next = drag.yaw + (e.clientX - drag.x) * 0.012;
+        this.avatarYaw = Math.atan2(Math.sin(next), Math.cos(next));
+      });
+      const endDrag = () => { drag = null; };
+      canvas.addEventListener('pointerup', endDrag);
+      canvas.addEventListener('pointercancel', endDrag);
+      canvas.addEventListener('pointerleave', endDrag);
+    }
+
+    const rows = $('avatar-rows');
+    if (rows) {
+      rows.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-step]');
+        if (!btn) return;
+        const field = btn.closest('[data-field]');
+        if (!field) return;
+        const step = Number(btn.dataset.step) || 1;
+        const av = this.avatarDraft;
+        if (field.dataset.field === 'faceType') av.faceType = cycle(FACE_TYPES, av.faceType, step);
+        else if (field.dataset.field === 'hairStyle') av.hairStyle = cycle(HAIR_STYLES, av.hairStyle, step);
+        else if (field.dataset.field === 'hairColor') av.hairColor = cycle(HAIR_COLORS, av.hairColor, step);
+        this.renderCharacter();
+      });
+    }
+
+    const nameInput = $('avatar-name');
+    if (nameInput) {
+      nameInput.addEventListener('input', () => {
+        this.avatarDraft.playerName = sanitizeName(nameInput.value);
+        const label = document.getElementById('avatar-preview-name');
+        if (label) label.textContent = this.avatarDraft.playerName;
+      });
+    }
+
+    const range = $('avatar-height');
+    if (range) {
+      range.addEventListener('input', () => {
+        this.avatarDraft.height = Number(range.value) || 172;
+        const label = document.getElementById('avatar-height-val');
+        if (label) label.textContent = `${this.avatarDraft.height}cm`;
+        this.renderCharacter();
+      });
+    }
+
+    const handBox = $('avatar-hand');
+    if (handBox) {
+      handBox.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-hand]');
+        if (!btn) return;
+        this.avatarDraft.handedness = btn.dataset.hand === 'left' ? 'left' : 'right';
+        this.renderCharacter();
+      });
+    }
+
+    const bodyBox = $('avatar-body');
+    if (bodyBox) {
+      bodyBox.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-body]');
+        if (!btn) return;
+        this.avatarDraft.bodyType = BODY_TYPES.indexOf(btn.dataset.body) >= 0 ? btn.dataset.body : 'Normal';
+        this.renderCharacter();
+      });
+    }
+
+    const poseBox = $('avatar-poses');
+    if (poseBox) {
+      poseBox.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-pose]');
+        if (!btn) return;
+        this.avatarPose = btn.dataset.pose;
+        this.renderCharacter();
+      });
+    }
 
     /* --- 育成 --- */
     if (this.el.statList) {
@@ -364,8 +462,13 @@ export class Screens {
 
   /* ---------------- ゲーム開始 ---------------- */
   applyAbilities() {
-    const abilities = deriveAbilities(this.profile.stats);
+    // 育成ステータス ＋ アバター補正（体格・身長）
+    const eff = avatarAdjustedStats(this.profile.stats, this.profile.avatar);
+    const abilities = deriveAbilities(eff);
+    abilities.reachMul *= 1 + avatarReachBonus(this.profile.avatar);
     this.game.setAbilities(abilities);
+    if (this.renderer) this.renderer.setAvatar(this.profile.avatar);
+    this.abilities = abilities;
     return abilities;
   }
 
@@ -412,32 +515,83 @@ export class Screens {
     if (badge) badge.hidden = p.points <= 0;
   }
 
-  /* ---------------- 育成画面 ---------------- */
+  /* ---------------- アバター編集画面（v1.3.0） ---------------- */
   renderCharacter() {
     const p = this.profile;
     const $ = (id) => document.getElementById(id);
     const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    const av = this.avatarDraft;
 
-    set('char-level', String(p.level));
+    /* --- レベル / 経験値 / ポイント --- */
+    set('char-level', `Lv.${p.level}`);
     set('char-points', String(p.points));
-    set('char-exp-text', p.isMaxLevel
-      ? 'MAX'
-      : `${p.exp} / ${p.expNeeded}`);
+    set('char-exp-text', p.isMaxLevel ? 'MAX' : `${p.exp} / ${p.expNeeded}`);
     const fill = $('char-exp-fill');
     if (fill) fill.style.width = `${Math.round(p.expProgress * 100)}%`;
     const sum = $('char-sum');
     if (sum) sum.textContent = `${p.totalStats} / ${STAT_KEYS.length * PROFILE_CONFIG.maxStat}`;
 
-    if (!this.el.statList) return;
-    const abilities = deriveAbilities(p.stats);
+    /* --- アバターのコントロール --- */
+    set('avatar-preview-name', av.playerName);
+    set('avatar-face', av.faceType);
+    set('avatar-hair', av.hairStyle);
+    set('avatar-haircolor', av.hairColor);
+    set('avatar-height-val', `${av.height}cm`);
 
+    const nameInput = $('avatar-name');
+    if (nameInput && document.activeElement !== nameInput) nameInput.value = av.playerName;
+    const range = $('avatar-height');
+    if (range && document.activeElement !== range) range.value = String(av.height);
+
+    document.querySelectorAll('[data-hand]').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.hand === av.handedness);
+    });
+    document.querySelectorAll('[data-body]').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.body === av.bodyType);
+    });
+    document.querySelectorAll('[data-pose]').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.pose === this.avatarPose);
+    });
+
+    /* --- 能力プレビュー（体格・身長の補正込み） --- */
+    const eff = avatarAdjustedStats(p.stats, av);
+    const list = $('avatar-ability-list');
+    if (list) {
+      list.innerHTML = STAT_KEYS.map((key) => {
+        const meta = STAT_META[key];
+        const base = p.stats[key];
+        const val = eff[key];
+        const diff = val - base;
+        const badge = diff ? `<em class="avatar-ability__diff ${diff > 0 ? 'is-up' : 'is-down'}">${diff > 0 ? '+' : ''}${diff}</em>` : '';
+        return `<li class="avatar-ability__row">
+          <span class="avatar-ability__name">${meta.label}<small>${STAT_EN[key] || ''}</small></span>
+          <span class="avatar-ability__bar"><i style="width:${val}%"></i></span>
+          <span class="avatar-ability__val">${val}${badge}</span>
+        </li>`;
+      }).join('');
+    }
+    const note = $('avatar-bonus-note');
+    if (note) {
+      const notes = avatarBonusNotes(av);
+      note.textContent = notes.length ? notes.join(' / ') : '補正なし';
+    }
+
+    this.renderStatList();
+    this.syncHomeProfile();
+    this.startAvatarPreview();
+  }
+
+  /** 強化リスト（既存の育成機能） */
+  renderStatList() {
+    if (!this.el.statList) return;
+    const p = this.profile;
+    const abilities = deriveAbilities(avatarAdjustedStats(p.stats, p.avatar));
     const effectText = {
       speed: `移動速度 ${fmtMul(abilities.speedMul)}・リーチ +${Math.round((abilities.reachMul - 1) * 100)}%`,
-      stamina: `疲労 ${Math.round(abilities.fatigueMul * 100)}%・獲得EXP +${Math.round(((p.stats.stamina - 50) / 50) * PROFILE_CONFIG.staminaExpBonusMax * 100)}%`,
+      stamina: `疲労 ${Math.round(abilities.fatigueMul * 100)}%`,
       accuracy: `コース誤差 ${Math.round(abilities.accuracyMul * 100)}%`,
       smash: `球速 ${fmtMul(1 / abilities.smashFlightMul)}・スコア ${fmtMul(abilities.smashScoreMul)}`,
     };
-
     this.el.statList.innerHTML = STAT_KEYS.map((key) => {
       const meta = STAT_META[key];
       const val = p.stats[key];
@@ -459,8 +613,65 @@ export class Screens {
           </button>
         </div>`;
     }).join('');
+  }
 
-    this.syncHomeProfile();
+  /* --- プレビュー描画（requestAnimationFrame） --- */
+  startAvatarPreview() {
+    const canvas = document.getElementById('avatar-canvas');
+    if (!canvas || this._avRAF) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const loop = () => {
+      this._avRAF = requestAnimationFrame(loop);
+      ctx.clearRect(0, 0, w, h);
+      const bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, 'rgba(126,232,250,0.20)');
+      bg.addColorStop(1, 'rgba(30,136,229,0.04)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(30,136,229,0.22)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h * 0.88, w * 0.25, h * 0.055, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      drawAvatar(ctx, {
+        x: w / 2,
+        y: h * 0.88,
+        size: h * 0.78,
+        yaw: this.avatarYaw,
+        t: performance.now() / 1000,
+        pose: this.avatarPose,
+        avatar: this.avatarDraft,
+      });
+    };
+    this._avRAF = requestAnimationFrame(loop);
+  }
+
+  stopAvatarPreview() {
+    if (this._avRAF) {
+      cancelAnimationFrame(this._avRAF);
+      this._avRAF = null;
+    }
+  }
+
+  /** 下書きを保存（localStorage へ） */
+  saveAvatar() {
+    const input = document.getElementById('avatar-name');
+    const av = normalizeAvatar({
+      ...this.avatarDraft,
+      playerName: input ? sanitizeName(input.value) : this.avatarDraft.playerName,
+    });
+    this.profile.avatar = av;
+    this.avatarDraft = normalizeAvatar(av);
+    this.storage.saveProfile(this.profile.toJSON());
+    try { this.storage.setSetting('handedness', av.handedness); } catch (e) { /* noop */ }
+    this.applyAbilities();
+    this.renderCharacter();
+    try { console.log('Avatar saved', av); } catch (e) { /* noop */ }
+    if (this.hud) this.hud.pushToast('アバターを保存しました', 'good');
+    return av;
   }
 
   upgrade(key) {

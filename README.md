@@ -3,7 +3,7 @@
 スワイプで打ち分けるスマートフォン向けバドミントンゲーム。
 v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA インストール不具合の真因を修正。v1.2.2 で PWA診断が全項目「-」になる不具合を修正。v1.2.3 で `deferredPrompt` の保持を修正。v1.2.4 で **設定画面のインストールボタンが無反応になる不具合**を修正しました。
 
-- バージョン: **v1.2.10**
+- バージョン: **v1.3.0**
 - 技術: HTML / CSS / JavaScript（フレームワーク・ビルド不要）
 - 対応: モバイルファースト / PWA（インストール・オフライン・スタンドアロン） / データセーブ
 - 公開: GitHub Pages・Vercel にそのままデプロイ可能
@@ -110,6 +110,60 @@ v1.2.0 で **キャラクター育成システム**を追加し、v1.2.1 で PWA
 
 
 ---
+
+## v1.3.0 の変更点（アバターシステム）
+
+Character 画面を **Avatar Editor** に進化させ、3Dアニメ風のプレイヤーアバターを導入しました。既存機能（Play / Training / Settings / PWA / 育成 / localStorage）はすべて維持しています。
+
+### 画面構成（スマホ縦・上から順）
+
+| セクション | 内容 |
+|---|---|
+| AVATAR | ヘッダー（Lv / 名前 / EXP / ポイントを重ねて表示） |
+| 3Dプレビュー | Canvas 2D の擬似3D。**指ドラッグで360°回転** |
+| ポーズ | Idle / Walk / Forehand / Backhand / Smash |
+| プレイヤー名 | 自由入力（1〜12文字、`sanitizeName` で無害化） |
+| 顔 / 髪型 / 髪色 | `◀ ▶` で循環選択 |
+| 利き手 | 右 / 左（既存 `settings.handedness` と同期） |
+| 身長 | スライダー 160〜200cm |
+| 体格 | Slim / Normal / Power |
+| 能力プレビュー | 補正込みの Speed / Stamina / Accuracy / Smash（±差分表示） |
+| 能力強化 | 既存の＋ボタン（1pt 消費）を維持 |
+| 保存 / 戻る | `保存` で localStorage へ、`ホームに戻る` でホームへ |
+
+### 育成システム連携（能力補正）
+
+| 設定 | 効果 |
+|---|---|
+| Slim | Speed +10 / Smash -5 |
+| Normal | 補正なし |
+| Power | Speed -5 / Smash +10 |
+| 180cm 以上 | 打点（リーチ）+5% |
+| 170cm 未満 | 移動速度（Speed）+3 |
+
+補正は `avatarAdjustedStats()` で 0..100 にクランプしたうえで `deriveAbilities()` に渡し、**ゲーム内の移動速度・リーチ・球速・スコア倍率に反映**されます（`screens.applyAbilities()`）。
+
+### アバターの描画
+
+- `js/core/avatar.js` — 設定の正規化・循環選択・補正計算（DOM 非依存）
+- `js/render/avatar3d.js` — アニメ風の擬似3D描画（yaw 回転・髪型5種・顔5種・髪色5種・体格・身長）
+- ゲーム内の選手も `renderer.setAvatar()` で **髪色・体格・身長・利き手** を反映
+
+### 保存データ
+
+`localStorage` の `bsc.v1`.profile.avatar に保存：
+
+```json
+{ "playerName": "Tomotaka", "faceType": "Face03", "hairStyle": "Ponytail",
+  "hairColor": "Blue", "handedness": "left", "height": 186, "bodyType": "Power" }
+```
+
+### 品質確認
+
+- Character ボタン → Avatar Editor へ遷移（Debug パネルでも `Connected` を確認可能）
+- 保存 → 再起動しても設定が復元される
+- Play 開始時にアバター設定（体格・身長・利己手・髪色）が反映される
+- 既存の Play / Training / 設定 / PWA診断 / 育成は無変更で動作
 
 ## v1.2.10 の変更点
 
@@ -738,6 +792,7 @@ npm run verify
 | v1.0.1 | PWA対応（インストール / オフライン / スタンドアロン） |
 | v1.2.0 | キャラクター育成（4能力・レベル・報酬） / 練習モード |
 | **v1.2.1** | **インストール不具合の真因修正（初期化順序） / PWA診断 / 要件不足の可視化** |
+| **v1.3.0** | **Avatar Editor / 3Dアニメ風アバター（回転・5ポーズ）/ 体格・身長の能力補正 / localStorage保存** |
 | **v1.2.10** | **シャトルのコルクを進行方向へ修正 / レベルアップ通知を画面上部へ（半透明・1.5秒）** |
 | **v1.2.9** | **Training/Character 実装状況レポート / Debug ボタン（Connected判定）/ 押下ログ4種 / 委譲フォールバック** |
 | **v1.2.8** | **Training/Character 無反応の修正（クリック以外の入力経路）/ Training画面 / 育成の英語表記** |

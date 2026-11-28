@@ -9,6 +9,8 @@
  *   stats : speed / stamina / accuracy / smash（50..100）
  */
 
+import { normalizeAvatar } from './avatar.js';
+
 export const STAT_KEYS = ['speed', 'stamina', 'accuracy', 'smash'];
 
 export const STAT_META = {
@@ -81,6 +83,8 @@ export class PlayerProfile {
     this.matches = clampInt(d.matches, 0, 999999, 0);
     this.wins = clampInt(d.wins, 0, 999999, 0);
     this.spent = clampInt(d.spent, 0, 999999, 0);
+    // アバター設定（v1.3.0）
+    this.avatar = normalizeAvatar(d.avatar);
   }
 
   /* ---------------- 参照 ---------------- */
@@ -181,6 +185,7 @@ export class PlayerProfile {
       matches: this.matches,
       wins: this.wins,
       spent: this.spent,
+      avatar: this.avatar,
     };
   }
 }
